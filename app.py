@@ -122,11 +122,24 @@ def _compute_single_clade(_conn, taxid, min_organisms, exclude_empty):
 
 
 @st.cache_data(show_spinner=False)
-def fetch_taxa_cached(root_taxid, target_rank):
-    """Cached wrapper to fetch taxa at rank before button is clicked."""
+def _fetch_taxa_ete3_fallback(root_taxid, target_rank):
+    """Fallback to ETE3 if not precomputed."""
+    return taxonomy.get_taxa_at_rank(root_taxid, target_rank)
+
+def fetch_taxa_cached(conn, root_taxid, target_rank):
+    """Fetch taxa from DB if precomputed, safely falling back to ETE3."""
     if root_taxid is None or target_rank is None:
         return None
-    return taxonomy.get_taxa_at_rank(root_taxid, target_rank)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT taxid, name FROM precomputed_taxa WHERE root_taxid = ? AND target_rank = ?", (int(root_taxid), target_rank))
+        rows = cursor.fetchall()
+        if rows:
+            return [(row[0], row[1]) for row in rows]
+    except sqlite3.OperationalError:
+        pass  # Table might not exist yet
+        
+    return _fetch_taxa_ete3_fallback(root_taxid, target_rank)
 
 
 def build_phylum_metadata(conn, taxids, min_organisms=0, exclude_empty=False, progress_bar=None, status_text=None):
@@ -201,7 +214,7 @@ def main():
     # Pre-fetch taxa to provide reactive feedback on tree size
     query_taxids = []
     if root_taxid and target_rank:
-        query_taxa = fetch_taxa_cached(root_taxid, target_rank)
+        query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
         if query_taxa:
             query_taxids = [t[0] for t in query_taxa]
             num_nodes = len(query_taxids)

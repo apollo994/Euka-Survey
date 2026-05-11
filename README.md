@@ -45,7 +45,13 @@ If you ever want to update the raw organism features by fetching fresh NCBI/ENA/
 ```bash
 python db_builder/pipeline_build_db.py
 ```
-This pipeline will query the web, build the `taxid_features` table across all ~1.8M eukaryotic species, patch missing zero-count taxonomic entries, and natively generate the roll-up math in the `precomputed_clade_features` table, dropping a completely finalized `db` ready for `app.py` utilization.
+This pipeline will query the web, build the `taxid_features` table across all ~1.8M eukaryotic species, patch missing zero-count taxonomic entries, and natively generate the roll-up math in the `precomputed_clade_features` table.
+
+For instantaneous UI preview responsiveness for commonly searched clades without blocking the main thread, run the taxa cache generator:
+```bash
+python db_builder/precompute_taxa.py --db eukaryote_taxid_features_2026_05_08.db
+```
+This script bakes the rank breakdown node mappings into the `precomputed_taxa` table, dropping a completely finalized `db` ready for `app.py` utilization.
 
 ## Notes
 - **Exclusion of Human/Mouse data**: RNA-seq runs for humans (taxID 9606) and mice (taxID 10090) are explicitly hardcoded to be excluded from ENA queries. This is an intentional project design to avoid significant API bloat for these highly sequenced model organisms.
