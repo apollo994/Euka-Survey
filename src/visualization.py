@@ -284,7 +284,7 @@ def create_layout_fn(ncbi, phylum_metadata, include_counts):
         taxon_name = ncbi.get_taxid_translator([taxid]).get(taxid, str(taxid))
 
         # Col 0 – taxon name ───────────────────────────────────────────────
-        name_face = TextFace(f" {taxon_name}", fsize=10, ftype="times new roman", fstyle="italic")
+        name_face = TextFace(f" {taxon_name} ({taxid})", fsize=10, ftype="times new roman", fstyle="italic")
         name_face.margin_right = 0 # 10
         node.add_face(name_face, column=0, position="aligned")
 

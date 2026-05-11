@@ -19,6 +19,16 @@ def precompute_clades(db_path: Path):
     leaf_rows = cursor.fetchall()
     print(f"Loaded {len(leaf_rows)} leaf rows with features.")
 
+    print("Filtering to only include 'species' rank...")
+    all_raw_taxids = [row[0] for row in leaf_rows]
+    try:
+         ranks = ncbi.get_rank(all_raw_taxids)
+    except Exception:
+         ranks = {}
+    
+    leaf_rows = [row for row in leaf_rows if ranks.get(row[0]) == 'species']
+    print(f"Kept {len(leaf_rows)} species-rank rows after filtering.")
+
     # Dictionary to hold the aggregations for each ancestor
     # Structure: clade_taxid -> {'n_rows', 'c_ass', 'c_ann', 'c_rna', 'c_lng', 's_ass', 's_ann', 's_rna', 's_lng'}
     clade_aggs = defaultdict(lambda: {

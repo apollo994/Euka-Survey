@@ -3,6 +3,7 @@ import sqlite3
 import os
 import tempfile
 import urllib.request
+import multiprocessing as mp
 from pathlib import Path
 from ete3 import NCBITaxa
 
@@ -12,12 +13,12 @@ from src import visualization
 from src import database
 
 # Constants
-DB_PATH = "eukaryote_taxid_features_2026_05_08.db"
-# Replace with your actual Zenodo or S3 URL when uploaded
-DB_DOWNLOAD_URL = "https://zenodo.org/records/20081452/files/eukaryote_taxid_features_2026_05_08.db?download=1" 
+DB_PATH = "eukaryotes.db"
+# Fetch from the automatic GitHub Release action
+DB_DOWNLOAD_URL = "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"  
 
 
-
+# --- Streamlit Community Cloud App Name ---
 st.set_page_config(page_title="EukaSurvey Platform", page_icon="🧬", layout="wide")
 
 @st.cache_resource(show_spinner="Downloading Database (this happens once)...")
@@ -41,7 +42,6 @@ def get_db_connection():
 def get_ncbi():
     return NCBITaxa()
 
-import multiprocessing as mp
 
 def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     """
@@ -121,6 +121,27 @@ def _compute_single_clade(_conn, taxid, min_organisms, exclude_empty):
     }
 
 
+@st.cache_data(show_spinner=False)
+def _fetch_taxa_ete3_fallback(root_taxid, target_rank):
+    """Fallback to ETE3 if not precomputed."""
+    return taxonomy.get_taxa_at_rank(root_taxid, target_rank)
+
+def fetch_taxa_cached(conn, root_taxid, target_rank):
+    """Fetch taxa from DB if precomputed, safely falling back to ETE3."""
+    if root_taxid is None or target_rank is None:
+        return None
+    try:
+        cursor = conn.cursor()
+        cursor.execute("SELECT taxid, name FROM precomputed_taxa WHERE root_taxid = ? AND target_rank = ?", (int(root_taxid), target_rank))
+        rows = cursor.fetchall()
+        if rows:
+            return [(row[0], row[1]) for row in rows]
+    except sqlite3.OperationalError:
+        pass  # Table might not exist yet
+        
+    return _fetch_taxa_ete3_fallback(root_taxid, target_rank)
+
+
 def build_phylum_metadata(conn, taxids, min_organisms=0, exclude_empty=False, progress_bar=None, status_text=None):
     """
     In-memory replacement for phylo_divbarchart.load_data().
@@ -143,38 +164,70 @@ def build_phylum_metadata(conn, taxids, min_organisms=0, exclude_empty=False, pr
 
 
 def main():
-    st.title("EukaSurvey: Phylogenetic Resource Explorer")
-    st.markdown("Instantly visualize genomic data availability across the eukaryotic tree of life.")
+    st.title("EukaSurvey: The Genomic Resource Explorer for Eukaryotes")
+    st.markdown("Visualize genomic data availability across the Eukaryotic Tree of Life.")
     
     # 1. Initialize dependencies
     db_ok = ensure_database()
-    if not db_ok and not os.path.exists(DB_PATH):
+    if not db_ok:
         st.stop()
-        
+         
     conn = get_db_connection()
     ncbi = get_ncbi()
     
-    # 2. Sidebar Configuration
+    ##### 2. Sidebar Configuration #####
     st.sidebar.header("Query Configuration")
-    root_taxid = st.sidebar.number_input("Root Taxon ID (e.g., 2759 for Eukaryotes)", value=2759, step=1)
     
-    target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus"], index=3)
+    # Root taxon selection with common clades for convenience
+    common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
     
+    choice = st.sidebar.selectbox(
+        "Set a custom Root Taxon ID or explore commonly surveyed clades:", 
+        ["Enter your own"] + common_taxa,
+        index=None,  # Nothing selected by default
+        placeholder="Choose a valid NCBI Taxon ID"
+    )
+
+    # Handle the selection
+    if choice is None:
+        root_taxid = None
+    elif choice == "Enter your own":
+        root_taxid = st.sidebar.text_input("Enter a valid NCBI Taxon ID", label_visibility="collapsed")
+        if root_taxid.isdigit():
+            root_taxid = int(root_taxid)
+        else:
+            st.sidebar.warning("Please enter a valid numeric Taxon ID.")
+    else:
+        taxid_map = {"Eukaryota (2759)": 2759, "Animals (33208)": 33208, "Mammalia (40674)": 40674, "Primates (9443)": 9443, "Fungi (4751)": 4751, "Plants (33090)": 33090}
+        root_taxid = taxid_map[choice]
+    
+    # Target rank selection
+    target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus"], placeholder=None)
+    
+    # Visualization settings
     st.sidebar.subheader("Visualization Settings")
     min_organisms = st.sidebar.number_input("Minimum Organisms in Clade", value=0, step=1)
     exclude_empty = st.sidebar.checkbox("Exclude Empty Taxa", value=True)
     include_counts = st.sidebar.checkbox("Show Numeric Details in Tree", value=True)
     
+    # Pre-fetch taxa to provide reactive feedback on tree size
+    query_taxids = []
+    if root_taxid and target_rank:
+        query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
+        if query_taxa:
+            query_taxids = [t[0] for t in query_taxa]
+            num_nodes = len(query_taxids)
+            st.sidebar.info(f"Tree size: **{num_nodes}** {target_rank} nodes")
+            if num_nodes > 100:
+                st.sidebar.warning("High node counts may take longer to compute and render.")
+        else:
+            st.sidebar.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
+
     if st.sidebar.button("Generate Visualization", type="primary"):
-        with st.spinner("Finding taxa..."):
-            # A) Find all child taxids at the target rank
-            taxa_pairs = taxonomy.get_taxa_at_rank(root_taxid, target_rank)
-            query_taxids = [t[0] for t in taxa_pairs]
+        if not query_taxids:
+            st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
+            st.stop()
             
-            if not query_taxids:
-                st.error(f"No {target_rank}s found under TaxID {root_taxid}.")
-                st.stop()
-                
         with st.spinner(f"Aggregating data for {len(query_taxids)} clades..."):
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -214,7 +267,35 @@ def main():
                     file_name=f"tree_{root_taxid}_{target_rank}.svg",
                     mime="image/svg+xml"
                 )
+            
+            # Store success in session state to persist buttons
+            st.session_state.rendered_taxid = root_taxid
+    
+    
+    # --- Open Query-Specific Database Buttons --- #
+    if "rendered_taxid" in st.session_state:
+        st.divider()
+        st.header("Explore Primary Databases")
+        taxid = st.session_state.rendered_taxid
+        root_name = ncbi.get_taxid_translator([taxid]).get(taxid, "Unknown Taxon")
+        
+        with st.container(horizontal=True, gap="medium"):
+            cols = st.columns(3, gap="medium", width="stretch", border=True)
+            
+            with cols[0]:
+                st.subheader("ENA Browser", text_alignment="center")
+                ena_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({taxid})%20AND%20library_strategy%3D%22rna-seq%22&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
+                st.markdown(f'<a href="{ena_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #18974c; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open RNA-Seq Reads for {root_name}</a>', unsafe_allow_html=True)
+
+            with cols[1]:
+                st.subheader("NCBI Datasets", text_alignment="center")
+                ncbi_url = f"https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon={taxid}"
+                st.markdown(f'<a href="{ncbi_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #20558a; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Genome Assemblies for {root_name}</a>', unsafe_allow_html=True)
+
+            with cols[2]:
+                st.subheader("Annotrieve", text_alignment="center")
+                anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={taxid}"
+                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Gene Annotations for {root_name}</a>', unsafe_allow_html=True)
 
 if __name__ == '__main__':
     main()
-

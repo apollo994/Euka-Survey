@@ -4,7 +4,6 @@ __pycache__/
 *$py.class
 
 # Databases
-*.db
 *.sqlite
 *.sqlite3
 
@@ -37,3 +36,4 @@ logs/
 .tmp_bars/
 temp_tree_render.svg
 .streamlit/secrets.toml
+*.db
