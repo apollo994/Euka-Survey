@@ -13,7 +13,7 @@ from src import visualization
 from src import database
 
 # Constants
-DB_PATH = "eukaryotes.db"
+DB_PATH = "eukaryote_taxid_features_2026_05_11.db"
 # Fetch from the automatic GitHub Release action
 DB_DOWNLOAD_URL = "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"  
 
@@ -217,7 +217,7 @@ def main():
         root_taxid = taxid_map[choice]
     
     # Target rank selection
-    target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus"], placeholder=None)
+    target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus", "species"], placeholder=None)
     
     # Visualization settings
     st.sidebar.subheader("Visualization Settings")
