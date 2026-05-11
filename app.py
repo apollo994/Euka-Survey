@@ -177,11 +177,10 @@ def main():
     
     ##### 2. Sidebar Configuration #####
     st.sidebar.header("Query Configuration")
-    # root_taxid = st.sidebar.number_input("Root Taxon ID (e.g., 2759 for Eukaryotes)", value=2759)
     
+    # Root taxon selection with common clades for convenience
     common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
     
-    # st.sidebar.info("Select a common taxon from the dropdown or enter a custom ID")
     choice = st.sidebar.selectbox(
         "Set a custom Root Taxon ID or explore commonly surveyed clades:", 
         ["Enter your own"] + common_taxa,
@@ -192,20 +191,20 @@ def main():
     # Handle the selection
     if choice is None:
         root_taxid = None
-
     elif choice == "Enter your own":
         root_taxid = st.sidebar.text_input("Enter a valid NCBI Taxon ID", label_visibility="collapsed")
         if root_taxid.isdigit():
             root_taxid = int(root_taxid)
         else:
             st.sidebar.warning("Please enter a valid numeric Taxon ID.")
-
     else:
         taxid_map = {"Eukaryota (2759)": 2759, "Animals (33208)": 33208, "Mammalia (40674)": 40674, "Primates (9443)": 9443, "Fungi (4751)": 4751, "Plants (33090)": 33090}
         root_taxid = taxid_map[choice]
     
+    # Target rank selection
     target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus"], placeholder=None)
     
+    # Visualization settings
     st.sidebar.subheader("Visualization Settings")
     min_organisms = st.sidebar.number_input("Minimum Organisms in Clade", value=0, step=1)
     exclude_empty = st.sidebar.checkbox("Exclude Empty Taxa", value=True)
@@ -268,6 +267,35 @@ def main():
                     file_name=f"tree_{root_taxid}_{target_rank}.svg",
                     mime="image/svg+xml"
                 )
+            
+            # Store success in session state to persist buttons
+            st.session_state.rendered_taxid = root_taxid
+    
+    
+    # --- Open Query-Specific Database Buttons --- #
+    if "rendered_taxid" in st.session_state:
+        st.divider()
+        st.header("Explore Primary Databases")
+        taxid = st.session_state.rendered_taxid
+        root_name = ncbi.get_taxid_translator([taxid]).get(taxid, "Unknown Taxon")
+        
+        with st.container(horizontal=True, gap="medium"):
+            cols = st.columns(3, gap="medium", width="stretch", border=True)
+            
+            with cols[0]:
+                st.subheader("ENA Browser", text_alignment="center")
+                ena_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({taxid})%20AND%20library_strategy%3D%22rna-seq%22&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
+                st.markdown(f'<a href="{ena_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #18974c; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open RNA-Seq Reads for {root_name}</a>', unsafe_allow_html=True)
+
+            with cols[1]:
+                st.subheader("NCBI Datasets", text_alignment="center")
+                ncbi_url = f"https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon={taxid}"
+                st.markdown(f'<a href="{ncbi_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #20558a; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Genome Assemblies for {root_name}</a>', unsafe_allow_html=True)
+
+            with cols[2]:
+                st.subheader("Annotrieve", text_alignment="center")
+                anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={taxid}"
+                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Gene Annotations for {root_name}</a>', unsafe_allow_html=True)
 
 if __name__ == '__main__':
     main()
