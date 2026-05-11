@@ -25,7 +25,7 @@ st.set_page_config(page_title="EukaSurvey Platform", page_icon="🧬", layout="w
 def ensure_database():
     """Ensure the SQLite DB exists, downloading it if necessary."""
     if not os.path.exists(DB_PATH):
-        st.warning(f"Database not found. Downloading from {DB_DOWNLOAD_URL}...")
+        # st.warning(f"Database not found. Downloading from {DB_DOWNLOAD_URL}...")
         try:
             urllib.request.urlretrieve(DB_DOWNLOAD_URL, DB_PATH)
             st.success("Database downloaded successfully!")
