@@ -13,7 +13,7 @@ from src import visualization
 from src import database
 
 # Constants
-DB_PATH = "eukaryote_taxid_features_2026_05_11.db"
+DB_PATH = "eukaryote_taxid_features_2026_05_11.db" # For local development
 # Fetch from the automatic GitHub Release action
 DB_DOWNLOAD_URL = "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"  
 
