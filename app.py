@@ -259,7 +259,11 @@ def main():
             
             # Sort and subset to Top N
             if phylum_metadata:
-                sorted_items = sorted(phylum_metadata.items(), key=lambda x: x[1][sort_by_key], reverse=True)
+                if sort_by_key.startswith('c_'):
+                    s_key = sort_by_key.replace('c_', 's_')
+                    sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1][s_key]), reverse=True)
+                else:
+                    sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1]['c_ass']), reverse=True)
                 phylum_metadata = dict(sorted_items[:top_n])
             
             # Show exclusion statistics
