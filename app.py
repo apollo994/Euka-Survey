@@ -13,7 +13,7 @@ from src import visualization
 from src import database
 
 # Constants
-DB_PATH = "eukaryote_taxid_features_2026_05_11.db" # For local development
+DB_PATH = "eukaryotes.db" # For local development
 # Fetch from the automatic GitHub Release action
 DB_DOWNLOAD_URL = "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"  
 
@@ -193,7 +193,7 @@ def main():
     choice = st.sidebar.selectbox(
         "Set a custom Root Taxon ID or explore commonly surveyed clades:", 
         ["Enter your own"] + common_taxa,
-        index=None,  # Nothing selected by default
+        index=1,  # Nothing selected by default
         placeholder="Choose a valid NCBI Taxon ID"
     )
 
