@@ -4,6 +4,7 @@ import os
 import tempfile
 import urllib.request
 import multiprocessing as mp
+import time
 from pathlib import Path
 from ete3 import NCBITaxa
 
@@ -13,7 +14,7 @@ from src import visualization
 from src import database
 
 # Constants
-DB_PATH = "eukaryotes.db" # For local development
+DB_PATH = "eularyotes.db" # For local development
 # Fetch from the automatic GitHub Release action
 DB_DOWNLOAD_URL = "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"  
 
@@ -28,7 +29,6 @@ def ensure_database():
         # st.warning(f"Database not found. Downloading from {DB_DOWNLOAD_URL}...")
         try:
             urllib.request.urlretrieve(DB_DOWNLOAD_URL, DB_PATH)
-            st.success("Database downloaded successfully!")
         except Exception as e:
             st.error(f"Could not download database: {e}")
             # Return False so the app knows it's not ready
@@ -201,7 +201,7 @@ def main():
     if choice is None:
         root_taxid = None
     elif choice == "Enter your own":
-        root_taxid = st.sidebar.text_input("Enter a valid NCBI Taxon ID", label_visibility="collapsed")
+        root_taxid = st.sidebar.text_input("", label_visibility="collapsed", value="2759", placeholder="e.g. 2759 for Eukaryota")
         if root_taxid.isdigit():
             root_taxid = int(root_taxid)
         else:
@@ -212,6 +212,29 @@ def main():
     
     # Target rank selection
     target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus", "species"], placeholder=None)
+    
+    # --- Open Query-Specific Database Buttons --- #
+    st.header("Explore Primary Databases")
+    root_name = ncbi.get_taxid_translator([root_taxid]).get(root_taxid, "Unknown Taxon")
+    
+    with st.container(horizontal=True, gap="medium"):
+        cols = st.columns(3, gap="medium", width="stretch", border=True)
+        
+        with cols[0]:
+            st.subheader("ENA Browser", text_alignment="center")
+            ena_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({root_taxid})%20AND%20library_strategy%3D%22rna-seq%22&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
+            st.markdown(f'<a href="{ena_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #18974c; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open RNA-Seq Reads for {root_name}</a>', unsafe_allow_html=True)
+
+        with cols[1]:
+            st.subheader("NCBI Datasets", text_alignment="center")
+            ncbi_url = f"https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon={root_taxid}"
+            st.markdown(f'<a href="{ncbi_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #20558a; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Genome Assemblies for {root_name}</a>', unsafe_allow_html=True)
+
+        with cols[2]:
+            st.subheader("Annotrieve", text_alignment="center")
+            anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={root_taxid}"
+            st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
+    st.divider()
     
     # Pre-fetch taxa to provide reactive feedback on tree size
     query_taxids = []
@@ -319,30 +342,6 @@ def main():
             st.session_state.rendered_taxid = root_taxid
     
     
-    # --- Open Query-Specific Database Buttons --- #
-    if "rendered_taxid" in st.session_state:
-        st.divider()
-        st.header("Explore Primary Databases")
-        taxid = st.session_state.rendered_taxid
-        root_name = ncbi.get_taxid_translator([taxid]).get(taxid, "Unknown Taxon")
-        
-        with st.container(horizontal=True, gap="medium"):
-            cols = st.columns(3, gap="medium", width="stretch", border=True)
-            
-            with cols[0]:
-                st.subheader("ENA Browser", text_alignment="center")
-                ena_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({taxid})%20AND%20library_strategy%3D%22rna-seq%22&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
-                st.markdown(f'<a href="{ena_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #18974c; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open RNA-Seq Reads for {root_name}</a>', unsafe_allow_html=True)
-
-            with cols[1]:
-                st.subheader("NCBI Datasets", text_alignment="center")
-                ncbi_url = f"https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon={taxid}"
-                st.markdown(f'<a href="{ncbi_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #20558a; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Genome Assemblies for {root_name}</a>', unsafe_allow_html=True)
-
-            with cols[2]:
-                st.subheader("Annotrieve", text_alignment="center")
-                anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={taxid}"
-                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
 
 if __name__ == '__main__':
     main()
