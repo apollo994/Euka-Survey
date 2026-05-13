@@ -94,7 +94,7 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
 
 
 @st.cache_data(show_spinner=False)
-def _compute_single_clade(_conn, taxid, min_organisms, exclude_empty):
+def _compute_single_clade(_conn, taxid, exclude_empty):
     """
     Cached helper to quickly fetch pre-computed clade aggregations from SQLite.
     """
@@ -104,7 +104,7 @@ def _compute_single_clade(_conn, taxid, min_organisms, exclude_empty):
     
     if not row:
         # If taxid has no entries in precomputed_clade_features (meaning it's fully empty)
-        if exclude_empty or min_organisms > 0:
+        if exclude_empty:
             return None
         return {
             'n_rows': 0, 'c_ass': 0, 'c_ann': 0, 'c_rna': 0, 'c_lng': 0,
@@ -113,8 +113,6 @@ def _compute_single_clade(_conn, taxid, min_organisms, exclude_empty):
         }
         
     n = row[0]
-    if n < min_organisms:
-        return None
         
     c_ass, c_ann, c_rna, c_lng = row[1], row[2], row[3], row[4]
     s_ass, s_ann, s_rna, s_lng = row[5], row[6], row[7], row[8]
@@ -157,7 +155,7 @@ def fetch_taxa_cached(conn, root_taxid, target_rank):
     return _fetch_taxa_ete3_fallback(root_taxid, target_rank)
 
 
-def build_phylum_metadata(conn, taxids, min_organisms=0, exclude_empty=False, progress_bar=None, status_text=None):
+def build_phylum_metadata(conn, taxids, exclude_empty=False, progress_bar=None, status_text=None):
     """
     In-memory replacement for phylo_divbarchart.load_data().
     Instead of iterating TSV files, it uses the database directly.
@@ -171,7 +169,7 @@ def build_phylum_metadata(conn, taxids, min_organisms=0, exclude_empty=False, pr
         if progress_bar:
             progress_bar.progress((i + 1) / total)
 
-        meta = _compute_single_clade(conn, taxid, min_organisms, exclude_empty)
+        meta = _compute_single_clade(conn, taxid, exclude_empty)
         if meta is not None:
             phylum_metadata[taxid] = meta
             
@@ -219,14 +217,9 @@ def main():
     # Target rank selection
     target_rank = st.sidebar.selectbox("Breakdown by Rank", ["phylum", "class", "order", "family", "genus", "species"], placeholder=None)
     
-    # Visualization settings
-    st.sidebar.subheader("Visualization Settings")
-    min_organisms = st.sidebar.number_input("Minimum Organisms in Clade", value=0, step=1)
-    exclude_empty = st.sidebar.checkbox("Exclude Empty Taxa", value=True)
-    include_counts = st.sidebar.checkbox("Show Numeric Details in Tree", value=True)
-    
     # Pre-fetch taxa to provide reactive feedback on tree size
     query_taxids = []
+    num_nodes = 0
     if root_taxid and target_rank:
         query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
         if query_taxa:
@@ -238,6 +231,26 @@ def main():
         else:
             st.sidebar.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
 
+    # Visualization settings
+    st.sidebar.subheader("Visualization Settings")
+    sort_options = {
+        "Number of organisms": "n_rows",
+        "Number of Assemblies": "c_ass",
+        "Annotations": "c_ann",
+        "RNA-Seq (Any)": "c_rna",
+        "Long-Read RNA": "c_lng"
+    }
+    sort_by_label = st.sidebar.selectbox("Sort by", list(sort_options.keys()))
+    sort_by_key = sort_options[sort_by_label]
+    
+    if num_nodes > 2:
+        top_n = st.sidebar.slider("Max nodes to display", min_value=2, max_value=num_nodes, value=min(50, num_nodes))
+    else:
+        top_n = max(2, num_nodes)
+    
+    exclude_empty = st.sidebar.checkbox("Exclude Empty Taxa", value=True)
+    include_counts = st.sidebar.checkbox("Show Numeric Details in Tree", value=True)
+
     if st.sidebar.button("Generate Visualization", type="primary"):
         if not query_taxids:
             st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
@@ -248,7 +261,12 @@ def main():
             status_text = st.empty()
             
             # B) Fetch data for all found taxids
-            phylum_metadata = build_phylum_metadata(conn, query_taxids, min_organisms, exclude_empty, progress_bar, status_text)
+            phylum_metadata = build_phylum_metadata(conn, query_taxids, exclude_empty, progress_bar, status_text)
+            
+            # Sort and subset to Top N
+            if phylum_metadata:
+                sorted_items = sorted(phylum_metadata.items(), key=lambda x: x[1][sort_by_key], reverse=True)
+                phylum_metadata = dict(sorted_items[:top_n])
             
             progress_bar.empty()
             status_text.empty()
