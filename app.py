@@ -124,12 +124,76 @@ def main():
         root_metadata = database.build_phylum_metadata(conn, [root_taxid], exclude_empty=False)
         if root_metadata and root_taxid in root_metadata:
             stats = root_metadata[root_taxid]
-            with st.container(horizontal=True):
-                st.metric("Total Species", f"{int(stats['n_rows']):,}", border=True)
-                st.metric("Assemblies", f"{int(stats['c_ass']):,}", border=True)
-                st.metric("Annotations", f"{int(stats['c_ann']):,}", border=True)
-                st.metric("RNA-Seq", f"{int(stats['c_rna']):,}", border=True)
-                st.metric("Long-RNA", f"{int(stats['c_lng']):,}", border=True)
+            
+            # Prominent top-level metric for Total Species
+            st.metric(
+                label=":material/groups: Total Species in Clade", 
+                value=f"{int(stats['n_rows']):,}",
+                help="Total number of unique species tracked in this clade"
+            )
+            
+            # Balanced 4-column layout for detailed resource breakdowns
+            cols = st.columns(4)
+            
+            # Assemblies Card
+            with cols[0]:
+                with st.container(border=True):
+                    st.markdown("##### :material/database: :blue[Assemblies]")
+                    st.metric(
+                        label="Species Covered", 
+                        value=f"{int(stats['s_ass']):,}",
+                        help="Unique species with at least one genome assembly"
+                    )
+                    st.metric(
+                        label="Total Assemblies", 
+                        value=f"{int(stats['c_ass']):,}",
+                        help="Total number of genome assemblies across all species"
+                    )
+                    
+            # Annotations Card
+            with cols[1]:
+                with st.container(border=True):
+                    st.markdown("##### :material/description: :orange[Annotations]")
+                    st.metric(
+                        label="Species Covered", 
+                        value=f"{int(stats['s_ann']):,}",
+                        help="Unique species with functional annotations available in Annotrieve"
+                    )
+                    st.metric(
+                        label="Total Annotations", 
+                        value=f"{int(stats['c_ann']):,}",
+                        help="Total number of annotated genomes across all species"
+                    )
+                    
+            # RNA-Seq Card
+            with cols[2]:
+                with st.container(border=True):
+                    st.markdown("##### :material/segment: :green[RNA-Seq (Any)]")
+                    st.metric(
+                        label="Species Covered", 
+                        value=f"{int(stats['s_rna']):,}",
+                        help="Unique species with any RNA-Seq read data available in ENA"
+                    )
+                    st.metric(
+                        label="Total Runs", 
+                        value=f"{int(stats['c_rna']):,}",
+                        help="Total number of RNA-Seq sequencing runs across all species"
+                    )
+                    
+            # Long-Read RNA Card
+            with cols[3]:
+                with st.container(border=True):
+                    st.markdown("##### :material/reorder: :green[Long-Read RNA]")
+                    st.metric(
+                        label="Species Covered", 
+                        value=f"{int(stats['s_lng']):,}",
+                        help="Unique species with long-read RNA sequencing data"
+                    )
+                    st.metric(
+                        label="Total Runs", 
+                        value=f"{int(stats['c_lng']):,}",
+                        help="Total number of long-read RNA sequencing runs"
+                    )
         else:
             st.warning("No data found for this Root Taxon.")
             
