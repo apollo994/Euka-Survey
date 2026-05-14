@@ -243,26 +243,27 @@ def main():
         st.divider()
 
     # --- Open Query-Specific Database Buttons --- #
-    st.header("Explore Primary Databases")
-
-    with st.container(horizontal=True, gap="medium"):
-        cols = st.columns(3, gap="medium", width="stretch", border=True)
-        
-        with cols[0]:
-            st.subheader("ENA Browser", text_alignment="center")
-            ena_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({root_taxid})%20AND%20library_strategy%3D%22rna-seq%22&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
-            st.markdown(f'<a href="{ena_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #18974c; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open RNA-Seq Reads for {root_name}</a>', unsafe_allow_html=True)
-
-        with cols[1]:
-            st.subheader("NCBI Datasets", text_alignment="center")
-            ncbi_url = f"https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon={root_taxid}"
-            st.markdown(f'<a href="{ncbi_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #20558a; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Genome Assemblies for {root_name}</a>', unsafe_allow_html=True)
-
-        with cols[2]:
-            st.subheader("Annotrieve", text_alignment="center")
-            anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={root_taxid}"
-            st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
-    st.divider()
+    if root_taxid and root_name != "Unknown":
+        st.header("Explore Primary Databases")
+    
+        with st.container(horizontal=True, gap="medium"):
+            cols = st.columns(3, gap="medium", width="stretch", border=True)
+            
+            with cols[0]:
+                st.subheader("ENA Browser", text_alignment="center")
+                ena_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({root_taxid})%20AND%20library_strategy%3D%22rna-seq%22&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
+                st.markdown(f'<a href="{ena_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #18974c; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open RNA-Seq Reads for {root_name}</a>', unsafe_allow_html=True)
+    
+            with cols[1]:
+                st.subheader("NCBI Datasets", text_alignment="center")
+                ncbi_url = f"https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon={root_taxid}"
+                st.markdown(f'<a href="{ncbi_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #20558a; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Genome Assemblies for {root_name}</a>', unsafe_allow_html=True)
+    
+            with cols[2]:
+                st.subheader("Annotrieve", text_alignment="center")
+                anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={root_taxid}"
+                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
+        st.divider()
 
     # Pre-fetch taxa to provide reactive feedback on tree size
     query_taxids = []
