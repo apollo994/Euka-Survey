@@ -159,7 +159,7 @@ def main():
     root_rank = ete_utils.get_rank_from_taxid(root_taxid) if root_taxid else "clade" # type: ignore
 
     # --- Root Taxon Stat Summary --- #
-    if root_taxid:
+    if root_taxid and root_name != "Unknown":
         st.header(f"Genomic Resource Summary: {root_name}")
         st.markdown(f"Overview of available resources across the entire _{root_name}_ {root_rank} (TaxID {root_taxid}).")
         
@@ -241,6 +241,8 @@ def main():
             st.warning("No data found for this Root Taxon.")
             
         st.divider()
+    elif root_taxid and root_name == "Unknown":
+        st.error(f"TaxID {root_taxid} does not exist in the NCBI taxonomy database.")
 
     # --- Open Query-Specific Database Buttons --- #
     if root_taxid and root_name != "Unknown":
@@ -268,16 +270,19 @@ def main():
     # Pre-fetch taxa to provide reactive feedback on tree size
     query_taxids = []
     num_nodes = 0
-    if root_taxid and target_rank:
-        query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
-        if query_taxa:
-            query_taxids = [t[0] for t in query_taxa]
-            num_nodes = len(query_taxids)
-            st.sidebar.info(f"Tree size: **{num_nodes}** {target_rank} nodes")
-            if num_nodes > 100:
-                st.sidebar.warning("High node counts may take longer to compute and render.")
-        else:
-            st.sidebar.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
+    if root_taxid and target_rank and root_name != "Unknown":
+        try:
+            query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
+            if query_taxa:
+                query_taxids = [t[0] for t in query_taxa]
+                num_nodes = len(query_taxids)
+                st.sidebar.info(f"Tree size: **{num_nodes}** {target_rank} nodes")
+                if num_nodes > 100:
+                    st.sidebar.warning("High node counts may take longer to compute and render.")
+            else:
+                st.sidebar.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
+        except ValueError:
+            st.sidebar.error("Invalid TaxID: Not found in database.")
 
     st.sidebar.divider()
     st.sidebar.subheader("Visualization Settings")
