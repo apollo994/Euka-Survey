@@ -118,7 +118,7 @@ def main():
     # --- Root Taxon Stat Summary --- #
     if root_taxid:
         st.header(f"Genomic Resource Summary: {root_name}")
-        st.markdown(f"Overview of available resources across the entire clade (TaxID {root_taxid}).")
+        st.markdown(f"Overview of available resources across the entire {root_name} clade (TaxID {root_taxid}).")
         
         # Fetch root stats dynamically
         root_metadata = database.build_phylum_metadata(conn, [root_taxid], exclude_empty=False)
@@ -141,12 +141,12 @@ def main():
                     st.markdown("##### :material/database: :blue[Assemblies]")
                     st.metric(
                         label="Species Covered", 
-                        value=f"{int(stats['s_ass']):,}",
+                        value=f"{int(stats['c_ass']):,}",
                         help="Unique species with at least one genome assembly"
                     )
                     st.metric(
                         label="Total Assemblies", 
-                        value=f"{int(stats['c_ass']):,}",
+                        value=f"{int(stats['s_ass']):,}",
                         help="Total number of genome assemblies across all species"
                     )
                     
@@ -156,12 +156,12 @@ def main():
                     st.markdown("##### :material/description: :orange[Annotations]")
                     st.metric(
                         label="Species Covered", 
-                        value=f"{int(stats['s_ann']):,}",
-                        help="Unique species with functional annotations available in Annotrieve"
+                        value=f"{int(stats['c_ann']):,}",
+                        help="Unique species with at least one functional annotation"
                     )
                     st.metric(
                         label="Total Annotations", 
-                        value=f"{int(stats['c_ann']):,}",
+                        value=f"{int(stats['s_ann']):,}",
                         help="Total number of annotated genomes across all species"
                     )
                     
@@ -171,28 +171,28 @@ def main():
                     st.markdown("##### :material/segment: :green[RNA-Seq (Any)]")
                     st.metric(
                         label="Species Covered", 
-                        value=f"{int(stats['s_rna']):,}",
-                        help="Unique species with any RNA-Seq read data available in ENA"
+                        value=f"{int(stats['c_rna']):,}",
+                        help="Unique species with any RNA-Seq read data"
                     )
                     st.metric(
                         label="Total Runs", 
-                        value=f"{int(stats['c_rna']):,}",
-                        help="Total number of RNA-Seq sequencing runs across all species"
+                        value=f"{int(stats['s_rna']):,}",
+                        help="Total number of RNA-Seq runs across all species"
                     )
                     
             # Long-Read RNA Card
             with cols[3]:
                 with st.container(border=True):
-                    st.markdown("##### :material/reorder: :green[Long-Read RNA]")
+                    st.markdown("##### :material/reorder: :green[Long-Read RNA-Seq]")
                     st.metric(
                         label="Species Covered", 
-                        value=f"{int(stats['s_lng']):,}",
-                        help="Unique species with long-read RNA sequencing data"
+                        value=f"{int(stats['c_lng']):,}",
+                        help="Unique species with at least one long-read RNA-Seq data"
                     )
                     st.metric(
                         label="Total Runs", 
-                        value=f"{int(stats['c_lng']):,}",
-                        help="Total number of long-read RNA sequencing runs"
+                        value=f"{int(stats['s_lng']):,}",
+                        help="Total number of Long-Read RNA-Seq runs across all species"
                     )
         else:
             st.warning("No data found for this Root Taxon.")
