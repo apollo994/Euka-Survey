@@ -9,6 +9,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from src.ete_utils import get_species_and_subspecies, get_name_from_taxid, get_rank_from_taxid
+
 def build_phylum_metadata(conn, taxids, exclude_empty=False):
     """
     In-memory replacement for phylo_divbarchart.load_data().
@@ -67,9 +69,6 @@ def build_phylum_metadata(conn, taxids, exclude_empty=False):
             }
             
     return phylum_metadata
-
-
-from src.ete_utils import get_species_and_subspecies, get_name_from_taxid, get_rank_from_taxid
 
 
 # ---------------------------------------------------------------------------
