@@ -55,7 +55,9 @@ def fetch_taxa_cached(conn, root_taxid, target_rank):
 
 # --------------------- Main App Logic --------------------- #
 def main():
-    st.title("EukaSurvey: The Genomic Resource Explorer for Eukaryotes")
+    # --- Main UI Layout ---
+    st.title("🧬 EukaSurvey")
+    st.subheader("The Genomic Resource Explorer for Eukaryotes", divider="blue")
     st.markdown("Visualize genomic data availability across the Eukaryotic Tree of Life.")
 
     # 1. Initialize dependencies
@@ -66,103 +68,116 @@ def main():
     ncbi = get_ncbi()
 
     # 2. Sidebar Configuration 
-    st.sidebar.header("Query Configuration")
-    
-    with st.sidebar.expander("How to use EukaSurvey", expanded=False):
-        st.markdown("""
-        **1. Define your Query**  
-        Select a **Root Taxon ID** (e.g. Mammals) and a **Breakdown Rank** (e.g. Family) to slice the Eukaryotic Tree of Life.
+    with st.sidebar:
+        st.header("Help & Resources")
         
-        **2. Review Summary**  
-        The dashboard shows total counts for Assemblies, Annotations, and RNA-Seq across your query.
-        
-        **3. Filter & Sort**  
-        In the *Tree Visualization* section, use **Filter Nodes** to skip taxa missing specific resources. You can combine filters with **AND/OR** logic.
-        
-        **4. Generate & Export**  
-        Click **Generate Visualization** to view the tree. Use the **Data Export** buttons to download your query as a TSV or the tree as an SVG.
-        """)
-
-    # Root taxon selection with common clades for convenience
-    common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
-
-    choice = st.sidebar.selectbox(
-        "Set a custom Root Taxon ID or explore commonly surveyed clades:", 
-        ["Enter your own"] + common_taxa,
-        index=1,
-        placeholder="Choose a valid NCBI Taxon ID",
-        key="root_taxon_selection"
-    )
-
-    # Handle the Root Taxon ID selection
-    if choice == "Enter your own":
-        root_taxid_input = st.sidebar.text_input("", label_visibility="collapsed", value="2759", placeholder="e.g. 2759 for Eukaryota")
-        if root_taxid_input and str(root_taxid_input).strip().isdigit():
-            root_taxid = int(str(root_taxid_input).strip())
-        else:
-            if root_taxid_input:
-                st.sidebar.warning("Please enter a valid numeric Taxon ID.")
-            root_taxid = None
-    else:
-        taxid_map = {
-            "Eukaryota (2759)": 2759, 
-            "Animals (33208)": 33208, 
-            "Mammalia (40674)": 40674, 
-            "Primates (9443)": 9443, 
-            "Fungi (4751)": 4751, 
-            "Plants (33090)": 33090
-        }
-        root_taxid = taxid_map[choice]
-
-    # Dynamic target rank Breakdown selection based on selected root taxon
-    FULL_RANKS = ['domain', 'superkingdom', 'kingdom', 'superphylum', 'phylum', 'subphylum', 'superclass', 'class', 'subclass', 'superorder', 'order', 'suborder', 'superfamily', 'family', 'subfamily', 'genus', 'subgenus', 'species']
-    ALLOWED_RANKS = ["phylum", "class", "order", "family", "genus", "species"]
-    
-    valid_options = ALLOWED_RANKS
-    if root_taxid:
-        try:
-            # Instantiate a fresh NCBITaxa to avoid Streamlit/SQLite cross-thread connection errors
-            from ete3 import NCBITaxa
-            local_ncbi = NCBITaxa()
-            ranks = local_ncbi.get_rank([root_taxid])
-            root_rank = ranks.get(root_taxid, "no rank")
+        with st.expander("How to use EukaSurvey", expanded=True):
+            st.markdown("""
+            **1. Define your Query**  
+            Select a **Root Taxon** (e.g. Mammals) and a **Breakdown Rank** (e.g. Family) to slice the tree.
             
-            if root_rank not in FULL_RANKS:
-                # Find effective rank via lineage if 'no rank' or non-canonical
-                lineage = local_ncbi.get_lineage(root_taxid)
-                lin_ranks = local_ncbi.get_rank(lineage)
-                for anc_taxid in reversed(lineage):
-                    r = lin_ranks.get(anc_taxid, "no rank")
-                    if r in FULL_RANKS:
-                        root_rank = r
-                        break
-                        
-            if root_rank in FULL_RANKS:
-                root_idx = FULL_RANKS.index(root_rank)
-                valid_options = [r for r in ALLOWED_RANKS if FULL_RANKS.index(r) > root_idx]
-        except ValueError:
-            st.sidebar.error("The selected TaxID could not be found. Please enter a valid TaxID or select from the common clades.")
-            root_taxid = None
-
-    if "rank_selection" not in st.session_state:
-        st.session_state.rank_selection = valid_options[0] if valid_options else "phylum"
-
-    if valid_options:
-        # Edge case: If previous selected rank was higher/equal (now invalid)
-        # automatically change to highest level available rank.
-        if st.session_state.rank_selection not in valid_options:
-            st.session_state.rank_selection = valid_options[0]
+            **2. Review Summary**  
+            The dashboard shows total counts for Assemblies, Annotations, and RNA-Seq across your query.
             
-        target_rank = st.sidebar.selectbox(
-            "Breakdown by Rank", 
-            valid_options, 
-            placeholder=None,
-            key="rank_selection"
-        )
-    else:
-        # Edge case: Selected root taxon is species or lower
-        st.sidebar.warning("Selected root taxon is at the species level or lower. No further breakdown available.")
-        target_rank = None
+            **3. Filter & Sort**  
+            In the *Tree Visualization* section, use **Filter Nodes** to skip taxa missing specific resources. You can combine filters with **AND/OR** logic.
+            
+            **4. Generate & Export**  
+            Click **Generate Visualization** to view the tree. Use the **Data Export** buttons to download your query as a TSV or the tree as an SVG.
+            """)
+
+        st.subheader("Project", anchor=False)
+        st.markdown("[View on GitHub](https://github.com/Cobos-Bioinfo/Euka-Survey) :material/open_in_new:")
+
+
+    # 3. Query Configuration (Migrated from Sidebar)
+    with st.container(border=True):
+        st.subheader("Query Configuration") #, icon=":material/settings:"
+        
+        # Root taxon selection with common clades for convenience
+        common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
+
+        q_cols = st.columns([2, 1], gap="medium")
+        
+        with q_cols[0]:
+            choice = st.selectbox(
+                "Root Taxon (NCBI ID or Common Clades):", 
+                ["Enter your own"] + common_taxa,
+                index=1,
+                placeholder="Choose a valid NCBI Taxon ID",
+                key="root_taxon_selection"
+            )
+
+            # Handle the Root Taxon ID selection
+            if choice == "Enter your own":
+                root_taxid_input = st.text_input("Enter NCBI Taxon ID:", value="2759", placeholder="e.g. 2759 for Eukaryota")
+                if root_taxid_input and str(root_taxid_input).strip().isdigit():
+                    root_taxid = int(str(root_taxid_input).strip())
+                else:
+                    if root_taxid_input:
+                        st.warning("Please enter a valid numeric Taxon ID.")
+                    root_taxid = None
+            else:
+                taxid_map = {
+                    "Eukaryota (2759)": 2759, 
+                    "Animals (33208)": 33208, 
+                    "Mammalia (40674)": 40674, 
+                    "Primates (9443)": 9443, 
+                    "Fungi (4751)": 4751, 
+                    "Plants (33090)": 33090
+                }
+                root_taxid = taxid_map[choice]
+
+        # Dynamic target rank Breakdown selection based on selected root taxon
+        FULL_RANKS = ['domain', 'superkingdom', 'kingdom', 'superphylum', 'phylum', 'subphylum', 'superclass', 'class', 'subclass', 'superorder', 'order', 'suborder', 'superfamily', 'family', 'subfamily', 'genus', 'subgenus', 'species']
+        ALLOWED_RANKS = ["phylum", "class", "order", "family", "genus", "species"]
+        
+        valid_options = ALLOWED_RANKS
+        if root_taxid:
+            try:
+                # Instantiate a fresh NCBITaxa to avoid Streamlit/SQLite cross-thread connection errors
+                from ete3 import NCBITaxa
+                local_ncbi = NCBITaxa()
+                ranks = local_ncbi.get_rank([root_taxid])
+                root_rank = ranks.get(root_taxid, "no rank")
+                
+                if root_rank not in FULL_RANKS:
+                    # Find effective rank via lineage if 'no rank' or non-canonical
+                    lineage = local_ncbi.get_lineage(root_taxid)
+                    lin_ranks = local_ncbi.get_rank(lineage)
+                    for anc_taxid in reversed(lineage):
+                        r = lin_ranks.get(anc_taxid, "no rank")
+                        if r in FULL_RANKS:
+                            root_rank = r
+                            break
+                            
+                if root_rank in FULL_RANKS:
+                    root_idx = FULL_RANKS.index(root_rank)
+                    valid_options = [r for r in ALLOWED_RANKS if FULL_RANKS.index(r) > root_idx]
+            except ValueError:
+                st.error("The selected TaxID could not be found. Please enter a valid TaxID or select from the common clades.")
+                root_taxid = None
+
+        if "rank_selection" not in st.session_state:
+            st.session_state.rank_selection = valid_options[0] if valid_options else "phylum"
+
+        with q_cols[1]:
+            if valid_options:
+                # Edge case: If previous selected rank was higher/equal (now invalid)
+                # automatically change to highest level available rank.
+                if st.session_state.rank_selection not in valid_options:
+                    st.session_state.rank_selection = valid_options[0]
+                    
+                target_rank = st.selectbox(
+                    "Breakdown by Rank:", 
+                    valid_options, 
+                    placeholder=None,
+                    key="rank_selection"
+                )
+            else:
+                # Edge case: Selected root taxon is species or lower
+                st.warning("Selected root taxon is at the species level or lower. No further breakdown available.")
+                target_rank = None
 
     root_name = ete_utils.get_name_from_taxid(root_taxid) if root_taxid else "Error" # type: ignore
     root_rank = ete_utils.get_rank_from_taxid(root_taxid) if root_taxid else "clade" # type: ignore
