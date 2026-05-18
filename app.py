@@ -56,7 +56,7 @@ def fetch_taxa_cached(conn, root_taxid, target_rank):
 # --------------------- Main App Logic --------------------- #
 def main():
     # --- Main UI Layout ---
-    st.title("🧬 EukaSurvey")
+    st.title("EukaSurvey")
     st.subheader("The Genomic Resource Explorer for Eukaryotes", divider="blue")
     st.markdown("Visualize genomic data availability across the Eukaryotic Tree of Life.")
 
@@ -71,7 +71,7 @@ def main():
     with st.sidebar:
         st.header("Help & Resources")
         
-        with st.expander("How to use EukaSurvey", expanded=True):
+        with st.expander("How to use EukaSurvey", expanded=False):
             st.markdown("""
             **1. Define your Query**  
             Select a **Root Taxon** (e.g. Mammals) and a **Breakdown Rank** (e.g. Family) to slice the tree.
@@ -90,14 +90,14 @@ def main():
         st.markdown("[View on GitHub](https://github.com/Cobos-Bioinfo/Euka-Survey) :material/open_in_new:")
 
 
-    # 3. Query Configuration (Migrated from Sidebar)
+    # 3. Query Configuration
     with st.container(border=True):
         st.subheader("Query Configuration") #, icon=":material/settings:"
         
         # Root taxon selection with common clades for convenience
         common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
 
-        q_cols = st.columns([2, 1], gap="medium")
+        q_cols = st.columns([1.5, 1, 1], gap="large")
         
         with q_cols[0]:
             choice = st.selectbox(
@@ -179,8 +179,28 @@ def main():
                 st.warning("Selected root taxon is at the species level or lower. No further breakdown available.")
                 target_rank = None
 
-    root_name = ete_utils.get_name_from_taxid(root_taxid) if root_taxid else "Error" # type: ignore
-    root_rank = ete_utils.get_rank_from_taxid(root_taxid) if root_taxid else "clade" # type: ignore
+        root_name = ete_utils.get_name_from_taxid(root_taxid) if root_taxid else "Error" # type: ignore
+        root_rank = ete_utils.get_rank_from_taxid(root_taxid) if root_taxid else "clade" # type: ignore
+
+        # Provide reactive feedback on tree size
+        query_taxids = []
+        query_taxa = None
+        num_nodes = 0
+        with q_cols[2]:
+            st.write("") # small alignment spacing
+            if root_taxid and target_rank and root_name != "Unknown":
+                try:
+                    query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
+                    if query_taxa:
+                        query_taxids = [t[0] for t in query_taxa]
+                        num_nodes = len(query_taxids)
+                        st.info(f"Tree size: **{num_nodes}** {target_rank} nodes", icon="🌲")
+                        if num_nodes > 100:
+                            st.caption("High node counts may take longer to compute and render.")
+                    else:
+                        st.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
+                except ValueError:
+                    st.error("Invalid TaxID: Not found in database.")
 
     # --- Root Taxon Stat Summary --- #
     if root_taxid and root_name != "Unknown":
@@ -290,25 +310,6 @@ def main():
                 anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={root_taxid}"
                 st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
         # st.divider()
-
-    # Pre-fetch taxa to provide reactive feedback on tree size
-    query_taxids = []
-    query_taxa = None
-    num_nodes = 0
-    if root_taxid and target_rank and root_name != "Unknown":
-        try:
-            query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
-            if query_taxa:
-                query_taxids = [t[0] for t in query_taxa]
-                num_nodes = len(query_taxids)
-                st.sidebar.info(f"Tree size: **{num_nodes}** {target_rank} nodes")
-                if num_nodes > 100:
-                    st.sidebar.warning("High node counts may take longer to compute and render.")
-            else:
-                st.sidebar.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
-        except ValueError:
-            st.sidebar.error("Invalid TaxID: Not found in database.")
-
 
     st.space("xsmall")
     # --- Tree Visualization Settings & Generation --- #
