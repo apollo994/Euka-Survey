@@ -74,7 +74,7 @@ def main():
         with st.expander("How to use EukaSurvey", expanded=False):
             st.markdown("""
             **1. Define your Query**  
-            Select a **Root Taxon** (e.g. Mammals) and a **Breakdown Rank** (e.g. Family) to slice the tree.
+            Select a **Root Taxon ID** (e.g. Mammals' 40674) and a **Breakdown Rank** (e.g. Family) to slice the tree.
             
             **2. Review Summary**  
             The dashboard shows total counts for Assemblies, Annotations, and RNA-Seq across your query.
@@ -375,7 +375,7 @@ def main():
                 else:
                     top_n = int(selected_limit)
 
-                include_counts = st.toggle("Show Numeric Details in Tree", value=True)
+                include_counts = st.toggle("Show Numeric Details in Tree", value=True, help="Toggle display of per-feature resource counts in the tree visualization.")
 
         # 3. Generate Visualization on button click
         if st.button("Generate Visualization", type="primary", icon=":material/account_tree:"):
@@ -444,10 +444,12 @@ def main():
                 # Export button
                 with open(tmp_svg, "rb") as f:
                     st.download_button(
-                        label="Download SVG Tree",
+                        label="Download SVG Figure",
                         data=f.read(),
                         file_name=f"tree_{root_taxid}_{target_rank}.svg",
-                        mime="image/svg+xml"
+                        mime="image/svg+xml",
+                        icon=":material/download:",
+                        type="primary"
                     )
                 
                 # Store success in session state to persist buttons
