@@ -220,11 +220,11 @@ def main():
             # Long-Read RNA Card
             with cols[3]:
                 with st.container(border=True):
-                    st.markdown("##### :material/reorder: :green[Long-Read RNA-Seq]")
+                    st.markdown("##### :material/reorder: :green[Long-Read RNA-Seq]", help="RNA-Seq experiments performed with Oxford Nanopore or PacBio SMRT platforms")
                     st.metric(
                         label="Species Covered", 
                         value=f"{int(stats['c_lng']):,}",
-                        help="Unique species with at least one long-read RNA-Seq data"
+                        help="Unique species with at least one long-read RNA-Seq experiment"
                     )
                     st.metric(
                         label="Total Runs", 
