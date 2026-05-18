@@ -9,10 +9,24 @@ This project provides a fast Streamlit Web Application for exploring genomic seq
 
 **Target Users:** Bioinformaticians, evolutionary biologists, and comparative genomicists conducting broad taxonomic surveys or meta-analyses who need to evaluate available molecular resources instantly without manually navigating NCBI or ENA portals.
 
+## Key Features
+- **Real-time Querying**: Instant lookups by NCBI Taxon ID or common eukaryotic clades.
+- **Dynamic Resource Statistics**: Metrics for whole genome assemblies, functional annotations, and RNA-seq data (short and long-reads).
+- **Advanced Filtering**: Combine multiple genomic resource requirements (e.g., "Must have Assemblies AND Long-Read RNA") to identify specific gaps.
+- **Phylogenetic Exploration**: Custom SVG tree rendering with breakdown by taxonomic rank (Phylum to Species).
+- **Data Export**: Download query results as optimized TSV files or high-quality SVG phylogenetic charts.
+
 ## Project Architecture
-- `app.py`: The main Streamlit Web App entry point. It provides a real-time querying interface using the natively precomputed metrics.
-- `src/`: Contains core Python module logic for database querying, taxonomy routing, and divergent bar chart rendering.
-- `db_builder/`: The offline pipeline. These scripts aggregate data from NCBI Datasets, Annotrieve, and EBI ENA, then build and precompute the optimized local SQLite database (`eukaryote_taxid_features_*.db`) allowing the web app to do `O(1)` millisecond lookups instead of runtime graph traversals.
+- `app.py`: The main Streamlit Web App entry point.
+- `src/`: Core logic for database querying, taxonomy routing, TSV generation, and ETE3 tree rendering.
+- `db_builder/`: The offline pipeline for aggregating data from NCBI, ENA, and Annotrieve.
+
+## Using the Application
+1. **Set Root Taxon**: Choose a starting point in the eukaryotic tree (e.g., Mammalia - TaxID 40674).
+2. **Select Breakdown Rank**: Choose the taxonomic resolution (e.g., Order, Family, or Genus).
+3. **Configure Filters**: In the "Tree Visualization" section, use the multi-select filter to require specific data types. Use the **Match ALL/ANY** toggle to switch between strict and broad filtering.
+4. **Sort and Limit**: Rank the results by your metric of interest and set a display limit (up to 500 nodes).
+5. **Analyze & Export**: Generate the tree to visualize coverage or download the TSV for downstream analysis.
 
 ## Installation & Local Execution
 
