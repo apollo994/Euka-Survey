@@ -228,7 +228,7 @@ def generate_axis_img():
                 color=SPINE_COLOR,
                 linewidth=(1.0 if major else 0.6))
 
-    labeled = {-100: "100", -50: "50", 0: "0", 50: "50", 100: "100"}
+    labeled = {-100: "1", -50: "0.5", 0: "0", 50: "0.5", 100: "1"}
     for x in [-100, -75, -50, -25, 0, 25, 50, 75, 100]:
         _tick(x, major=(x in labeled))
         if x in labeled:
@@ -403,7 +403,7 @@ def configure_tree_style(my_layout, include_counts):
     ts.aligned_foot.add_face(axis_face, column=1)
 
     # Header Col 2 – "Number of organisms"
-    org_header = TextFace("Number of\norganisms", fsize=10, bold=True,
+    org_header = TextFace("Number of\nspecies", fsize=10, bold=True,
                           ftype="times new roman", tight_text=True)
     org_header.margin_right  = 20
     org_header.margin_bottom = 10
@@ -413,7 +413,7 @@ def configure_tree_style(my_layout, include_counts):
         # Add a unified header for the counts section
         # Stacked into two lines so its width matches the count text cells,
         # preventing ETE3 from widening the column and displacing the squares!
-        counts_header = TextFace("Entries (Organisms)", fsize=10, bold=True,
+        counts_header = TextFace("Entries (Unique Species)", fsize=10, bold=True,
                                  ftype="times new roman", tight_text=True)
         counts_header.margin_right = -100
         counts_header.margin_left = 0

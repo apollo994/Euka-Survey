@@ -9,36 +9,77 @@ This project provides a fast Streamlit Web Application for exploring genomic seq
 
 **Target Users:** Bioinformaticians, evolutionary biologists, and comparative genomicists conducting broad taxonomic surveys or meta-analyses who need to evaluate available molecular resources instantly without manually navigating NCBI or ENA portals.
 
+## Key Features
+- **Real-time Querying**: Instant lookups by NCBI Taxon ID or common eukaryotic clades.
+- **Dynamic Resource Statistics**: Metrics for whole genome assemblies, functional annotations, and RNA-seq data (short and long-reads).
+- **Advanced Filtering**: Combine multiple genomic resource requirements (e.g., "Must have Assemblies AND Long-Read RNA") to identify specific gaps.
+- **Phylogenetic Exploration**: Custom SVG tree rendering with breakdown by taxonomic rank (Phylum to Species).
+- **Data Export**: Download query results as optimized TSV files or high-quality SVG phylogenetic charts.
+
 ## Project Architecture
-- `app.py`: The main Streamlit Web App entry point. It provides a real-time querying interface using the natively precomputed metrics.
-- `src/`: Contains core Python module logic for database querying, taxonomy routing, and divergent bar chart rendering.
-- `db_builder/`: The offline pipeline. These scripts aggregate data from NCBI Datasets, Annotrieve, and EBI ENA, then build and precompute the optimized local SQLite database (`eukaryote_taxid_features_*.db`) allowing the web app to do `O(1)` millisecond lookups instead of runtime graph traversals.
+- `app.py`: The main Streamlit Web App entry point.
+- `src/`: Core logic for database querying, taxonomy routing, TSV generation, and ETE3 tree rendering.
+- `db_builder/`: The offline pipeline for aggregating data from NCBI, ENA, and Annotrieve.
+
+## Architecture Notes
+
+### Thread-safe Taxonomy Lookups
+
+ETE3's `NCBITaxa` uses SQLite internally. Python's `sqlite3` enforces a rule
+that a connection created in one thread cannot be used in another — this causes
+`sqlite3.ProgrammingError` in Streamlit, because `st.cache_resource` shares a
+single instance across all sessions and their threads.
+
+The fix is to scope the `NCBITaxa` instance to the user's session via
+`st.session_state`, which guarantees the SQLite connection is always used in the
+same thread it was created in, while still avoiding repeated re-initialization
+on every UI interaction (rerun).
+
+```python
+# Safe — one connection per session, same thread always
+def get_local_ncbi():
+    if "ncbi" not in st.session_state:
+        st.session_state.ncbi = NCBITaxa()
+    return st.session_state.ncbi
+
+# Unsafe — shared across sessions/threads → ProgrammingError
+@st.cache_resource
+def get_ncbi():
+    return NCBITaxa()
+```
+
+## Using the Application
+1. **Set Root Taxon**: Choose a starting point in the eukaryotic tree (e.g., Mammalia - TaxID 40674).
+2. **Select Breakdown Rank**: Choose the taxonomic resolution (e.g., Order, Family, or Genus).
+3. **Configure Filters**: In the "Tree Visualization" section, use the multi-select filter to require specific data types. Use the **Match ALL/ANY** toggle to switch between strict and broad filtering.
+4. **Sort and Limit**: Rank the results by your metric of interest and set a display limit (up to 500 nodes).
+5. **Analyze & Export**: Generate the tree to visualize coverage or download the TSV for downstream analysis.
 
 ## Installation & Local Execution
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/Cobos-Bioinfo/euka_survey.git
-   cd euka_survey
+   git clone https://github.com/Cobos-Bioinfo/Euka-Survey.git
+   cd Euka-Survey
    ```
 2. **Install Python dependencies:**
    Use the provided environment.yml file to create a conda environment (This guarantees C-dependencies like ETE3 and PyQt5 work properly):
    ```bash
    conda env create -f environment.yml
-   conda activate euka_survey
+   conda activate euka_refactored
    ```
 3. **Launch the web application:**
    ```bash
    streamlit run app.py
    ```
-   *Note: If the `eukaryote_taxid_features_*.db` file isn't found locally, the app will automatically attempt to download the precomputed copy from Zenodo into the root folder.*
+   *Note: If the `eukaryotes.db` file isn't found locally, the app will automatically attempt to download the precomputed copy from GitHub Releases into the root folder.*
 
 ## Cloud Deployment (Streamlit Community Cloud)
 
-This project is perfectly formatted for 1-click deployment on Streamlit Community Cloud.
+This project is formatted for 1-click deployment on Streamlit Community Cloud.
 Because of the heavy dependency on `ete3` and `PyQt5` for rendering SVG phylogenetic charts, Streamlit Cloud detects the `environment.yml` and natively provisions the correct conda backing.
 
-Similarly, the app will automatically download the SQLite database from a Zenodo DOI bucket to boot, making the GitHub repo 100% code-driven without storing large binaries.
+Similarly, the app will automatically download the SQLite database from the GitHub Releases into the root folder to boot.
 
 ## Offline DB Generation Pipeline
 If you ever want to update the raw organism features by fetching fresh NCBI/ENA/Annotrieve data:
@@ -53,6 +94,5 @@ python db_builder/precompute_taxa.py --db eukaryotes.db
 ```
 This script bakes the rank breakdown node mappings into the `precomputed_taxa` table, dropping a completely finalized `db` ready for `app.py` utilization.
 
-## Notes
-- **Exclusion of Human/Mouse data**: RNA-seq runs for humans (taxID 9606) and mice (taxID 10090) are explicitly hardcoded to be excluded from ENA queries. This is an intentional project design to avoid significant API bloat for these highly sequenced model organisms.
-- Multi-processing limitation patches have been successfully implemented to bypass SQLite check-thread locks and PyQt5 MainThread constraints within Streamlit's architecture.
+## Contributing
+Contributions are welcome! Please fork the repository and submit a pull request with your changes. For major changes, please open an issue first to discuss what you would like to change.
