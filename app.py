@@ -249,7 +249,7 @@ def main():
         else:
             st.warning("No data found for this Root Taxon.")
             
-        st.divider()
+        # st.divider()
     elif root_taxid and root_name == "Unknown":
         st.error(f"TaxID {root_taxid} does not exist in the NCBI taxonomy database.")
 
@@ -274,7 +274,7 @@ def main():
                 st.subheader("Annotrieve", text_alignment="center")
                 anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={root_taxid}"
                 st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
-        st.divider()
+        # st.divider()
 
     # Pre-fetch taxa to provide reactive feedback on tree size
     query_taxids = []
@@ -294,26 +294,8 @@ def main():
         except ValueError:
             st.sidebar.error("Invalid TaxID: Not found in database.")
 
-    # --- TSV Data Export Section --- #
-    if root_taxid and target_rank and query_taxa and root_name != "Unknown":
-        st.header("Data Export")
-        st.write("Download the complete overview of the current query as a TSV file.")
-        
-        # In Streamlit, data for download_button is evaluated on render. 
-        # We cache the generator to maintain UI performance instead of a 2-button prepare flow.
-        tsv_filename = f"{root_name.replace(' ', '_')}_{target_rank}_data.tsv"
-        tsv_data = utils.generate_tsv(conn, query_taxa)
-        
-        st.download_button(
-            label="Download TSV",
-            data=tsv_data,
-            file_name=tsv_filename,
-            mime="text/tab-separated-values",
-            icon=":material/download:",
-            type="primary"
-        )
-        st.divider()
 
+    st.space("xsmall")
     # --- Tree Visualization Settings & Generation --- #
     if root_taxid and root_name != "Unknown" and query_taxids:
         st.header("Tree Visualization")
@@ -455,6 +437,25 @@ def main():
                 # Store success in session state to persist buttons
                 st.session_state.rendered_taxid = root_taxid
 
+    st.space("xsmall")
+    # --- TSV Data Export Section --- #
+    if root_taxid and target_rank and query_taxa and root_name != "Unknown":
+        st.header("Data Export")
+        st.write("Download the complete overview of the current query as a TSV file.")
+        
+        # In Streamlit, data for download_button is evaluated on render. 
+        # We cache the generator to maintain UI performance instead of a 2-button prepare flow.
+        tsv_filename = f"{root_name.replace(' ', '_')}_{target_rank}_data.tsv"
+        tsv_data = utils.generate_tsv(conn, query_taxa)
+        
+        st.download_button(
+            label="Download TSV",
+            data=tsv_data,
+            file_name=tsv_filename,
+            mime="text/tab-separated-values",
+            icon=":material/download:",
+            type="primary"
+        )
 
 if __name__ == "__main__":
     main()
