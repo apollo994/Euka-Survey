@@ -299,100 +299,136 @@ def main():
         )
         st.divider()
 
-    st.sidebar.divider()
-    st.sidebar.subheader("Visualization Settings")
-    sort_options = {
-        "Number of organisms": "n_rows",
-        "Number of Assemblies": "c_ass",
-        "Annotations": "c_ann",
-        "RNA-Seq (Any)": "c_rna",
-        "Long-Read RNA": "c_lng"
-    }
-    sort_by_label = st.sidebar.selectbox("Sort by", list(sort_options.keys()), key="sort_by_selection")
-    sort_by_key = sort_options[sort_by_label]
-
-    if num_nodes > 2:
-        breakpoints = [10, 50, 100, 250, 500, 1000]
-        valid_options = [str(b) for b in breakpoints if b < num_nodes]
-        valid_options.append(f"All ({num_nodes})")
-        valid_options.append("Custom")
+    # --- Tree Visualization Settings & Generation --- #
+    if root_taxid and root_name != "Unknown" and query_taxids:
+        st.header("Tree Visualization")
         
-        default_idx = valid_options.index("50") if "50" in valid_options else (len(valid_options) - 2)
-        selected_limit = st.sidebar.selectbox("Max nodes to display", valid_options, index=default_idx, key="limit_selection")
-        
-        if selected_limit == "Custom":
-            top_n = st.sidebar.number_input("Enter custom max nodes", min_value=2, max_value=num_nodes, value=min(50, num_nodes), step=1)
-        elif selected_limit.startswith("All"):
-            top_n = num_nodes
-        else:
-            top_n = int(selected_limit)
-    else:
-        top_n = max(2, num_nodes)
-
-    exclude_empty = st.sidebar.checkbox("Exclude Empty Taxa", value=True)
-    include_counts = st.sidebar.checkbox("Show Numeric Details in Tree", value=True)
-
-    # 3. Generate Visualization on button click
-    if st.sidebar.button("Generate Visualization", type="primary"):
-        if not target_rank:
-            st.error("Cannot generate tree: Root taxon is at species level or lower, no further taxonomic breakdown is possible.")
-            st.stop()
-        if not query_taxids:
-            st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
-            st.stop()
+        with st.container(border=True):
+            st.subheader("Filter Nodes")
+            filter_options = {
+                "Assemblies": "c_ass",
+                "Annotations": "c_ann",
+                "RNA-Seq (Any)": "c_rna",
+                "Long-Read RNA": "c_lng"
+            }
+            selected_filters = st.multiselect("Require data for (leaves node out if it lacks data):", list(filter_options.keys()), placeholder="Select features...")
             
-        with st.spinner(f"Aggregating data for {top_n} clades..."):
+            filter_logic = "Match ALL (AND)"
+            if len(selected_filters) > 1:
+                filter_logic = st.segmented_control("Condition", ["Match ALL (AND)", "Match ANY (OR)"], default="Match ALL (AND)")
             
-            # Fetch data for all found taxids
-            phylum_metadata = database.build_phylum_metadata(conn, query_taxids, exclude_empty)
+            st.subheader("Sorting & Limits")
+            sort_options = {
+                "Number of organisms": "n_rows",
+                "Number of Assemblies": "c_ass",
+                "Annotations": "c_ann",
+                "RNA-Seq (Any)": "c_rna",
+                "Long-Read RNA": "c_lng"
+            }
+            cols = st.columns(2)
             
-            # Sort and subset to Top N
-            if phylum_metadata:
-                if sort_by_key.startswith('c_'):
-                    s_key = sort_by_key.replace('c_', 's_')
-                    sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1][s_key]), reverse=True)
-                else:
-                    sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1]['c_ass']), reverse=True)
-                phylum_metadata = dict(sorted_items[:top_n])
-            
-            # Show exclusion statistics
-            nodes_excluded = len(query_taxids) - len(phylum_metadata)
-            if nodes_excluded > 0:
-                st.info(f"**Nodes included:** {len(phylum_metadata)}/{len(query_taxids)} "
-                        f"({nodes_excluded} excluded due to filtering criteria)")
-            
-            if not phylum_metadata:
-                st.warning("No clades have data matching the criteria (or all were empty).")
-                st.stop()
-
-        with st.spinner("Rendering phylogenetic tree..."):
-            # Build and render ETE3 tree map using a Subprocess to respect PyQt threading rules
-            tmp_svg = "temp_tree_render.svg"
-            if os.path.exists(tmp_svg):
-                os.remove(tmp_svg)
+            with cols[0]:
+                sort_by_label = st.selectbox("Sort top nodes by", list(sort_options.keys()), key="sort_by_selection")
+                sort_by_key = sort_options[sort_by_label]
                 
-            ctx = mp.get_context('spawn')
-            p = ctx.Process(target=visualization.render_tree_in_process, args=(phylum_metadata, include_counts, tmp_svg))
-            p.start()
-            p.join()
-            
-            if p.exitcode != 0 or not os.path.exists(tmp_svg):
-                st.error("Failed to render the tree. This is usually due to Qt/X11 rendering restrictions.")
+                exclude_empty = st.toggle("Exclude Empty Taxa (Zero data across all fields)", value=True)
+
+            with cols[1]:
+                if num_nodes > 2:
+                    breakpoints = [10, 50, 100, 250, 500, 1000]
+                    valid_options_limit = [str(b) for b in breakpoints if b < num_nodes]
+                    valid_options_limit.append(f"All ({num_nodes})")
+                    valid_options_limit.append("Custom")
+                    
+                    default_idx = valid_options_limit.index("50") if "50" in valid_options_limit else (len(valid_options_limit) - 2)
+                    selected_limit = st.selectbox("Max nodes to display", valid_options_limit, index=default_idx, key="limit_selection")
+                    
+                    if selected_limit == "Custom":
+                        top_n = st.number_input("Enter custom max nodes", min_value=2, max_value=num_nodes, value=min(50, num_nodes), step=1)
+                    elif selected_limit.startswith("All"):
+                        top_n = num_nodes
+                    else:
+                        top_n = int(selected_limit)
+                else:
+                    top_n = max(2, num_nodes)
+
+                include_counts = st.toggle("Show Numeric Details in Tree", value=True)
+
+        # 3. Generate Visualization on button click
+        if st.button("Generate Visualization", type="primary", icon=":material/account_tree:"):
+            if not target_rank:
+                st.error("Cannot generate tree: Root taxon is at species level or lower, no further taxonomic breakdown is possible.")
                 st.stop()
+            if not query_taxids:
+                st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
+                st.stop()
+                
+            with st.spinner(f"Aggregating data and filtering clades..."):
+                
+                # Fetch data for all found taxids
+                phylum_metadata = database.build_phylum_metadata(conn, query_taxids, exclude_empty)
+                
+                # Apply multi-select filtering
+                if selected_filters and phylum_metadata:
+                    filtered_metadata = {}
+                    filter_keys = [filter_options[f] for f in selected_filters]
+                    
+                    for taxid, stats in phylum_metadata.items():
+                        if filter_logic == "Match ALL (AND)":
+                            if all(stats.get(k, 0) > 0 for k in filter_keys):
+                                filtered_metadata[taxid] = stats
+                        else:  # Match ANY (OR)
+                            if any(stats.get(k, 0) > 0 for k in filter_keys):
+                                filtered_metadata[taxid] = stats
+                    phylum_metadata = filtered_metadata
+                
+                # Sort and subset to Top N
+                if phylum_metadata:
+                    if sort_by_key.startswith('c_'):
+                        s_key = sort_by_key.replace('c_', 's_')
+                        sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1][s_key]), reverse=True)
+                    else:
+                        sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1]['c_ass']), reverse=True)
+                    phylum_metadata = dict(sorted_items[:top_n])
             
-            st.image(tmp_svg, use_container_width=True)
-            
-            # Export button
-            with open(tmp_svg, "rb") as f:
-                st.download_button(
-                    label="Download SVG Tree",
-                    data=f.read(),
-                    file_name=f"tree_{root_taxid}_{target_rank}.svg",
-                    mime="image/svg+xml"
-                )
-            
-            # Store success in session state to persist buttons
-            st.session_state.rendered_taxid = root_taxid
+                # Show exclusion statistics
+                nodes_excluded = len(query_taxids) - len(phylum_metadata)
+                if nodes_excluded > 0:
+                    st.info(f"**Nodes included:** {len(phylum_metadata)}/{len(query_taxids)} "
+                            f"({nodes_excluded} excluded due to filtering criteria)")
+                
+                if not phylum_metadata:
+                    st.warning("No clades have data matching the criteria (or all were empty).")
+                    st.stop()
+
+            with st.spinner("Rendering phylogenetic tree..."):
+                # Build and render ETE3 tree map using a Subprocess to respect PyQt threading rules
+                tmp_svg = "temp_tree_render.svg"
+                if os.path.exists(tmp_svg):
+                    os.remove(tmp_svg)
+                    
+                ctx = mp.get_context('spawn')
+                p = ctx.Process(target=visualization.render_tree_in_process, args=(phylum_metadata, include_counts, tmp_svg))
+                p.start()
+                p.join()
+                
+                if p.exitcode != 0 or not os.path.exists(tmp_svg):
+                    st.error("Failed to render the tree. This is usually due to Qt/X11 rendering restrictions.")
+                    st.stop()
+                
+                st.image(tmp_svg, use_container_width=True)
+                
+                # Export button
+                with open(tmp_svg, "rb") as f:
+                    st.download_button(
+                        label="Download SVG Tree",
+                        data=f.read(),
+                        file_name=f"tree_{root_taxid}_{target_rank}.svg",
+                        mime="image/svg+xml"
+                    )
+                
+                # Store success in session state to persist buttons
+                st.session_state.rendered_taxid = root_taxid
 
 
 if __name__ == "__main__":
