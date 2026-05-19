@@ -39,12 +39,13 @@ def get_ncbi():
     # However, st.cache_resource for NCBITaxa is often the cause of sqlite3.ProgrammingError.
     return NCBITaxa()
 
-def fetch_taxa_cached(conn, root_taxid, target_rank):
+@st.cache_data(max_entries=200)
+def fetch_taxa_cached(_conn, root_taxid, target_rank):
     """Fetch taxa from DB if precomputed, safely falling back to ETE3."""
     if root_taxid is None or target_rank is None:
         return None
     try:
-        cursor = conn.cursor()
+        cursor = _conn.cursor()
         cursor.execute("SELECT taxid, name FROM precomputed_taxa WHERE root_taxid = ? AND target_rank = ?", (int(root_taxid), target_rank))
         rows = cursor.fetchall()
         if rows:
@@ -53,6 +54,31 @@ def fetch_taxa_cached(conn, root_taxid, target_rank):
         pass  # Table might not exist yet
         
     return taxonomy.get_taxa_at_rank(root_taxid, target_rank)
+
+@st.cache_data(max_entries=100)
+def get_phylum_metadata_cached(_conn, taxids: tuple, exclude_empty: bool):
+    """Wrapper to cache the heavy database computation of phylum/clade metadata."""
+    return database.build_phylum_metadata(_conn, list(taxids), exclude_empty)
+
+@st.cache_data(max_entries=50, show_spinner=False)
+def generate_tree_svg_cached(phylum_metadata: dict, include_counts: bool) -> bytes:
+    """Wrapper to cache SVG rendering results from the multiprocessing Qt context."""
+    session_id = uuid.uuid4().hex
+    tmp_svg = f"temp_tree_{session_id}.svg"
+    
+    ctx = mp.get_context('spawn')
+    p = ctx.Process(target=visualization.render_tree_in_process, args=(phylum_metadata, include_counts, tmp_svg))
+    p.start()
+    p.join()
+    
+    if p.exitcode != 0 or not os.path.exists(tmp_svg):
+        return None
+        
+    with open(tmp_svg, "rb") as f:
+        svg_bytes = f.read()
+    
+    os.remove(tmp_svg)
+    return svg_bytes
 
 # --------------------- Main App Logic --------------------- #
 def main():
@@ -211,7 +237,7 @@ def main():
         st.markdown(f"Overview of available resources across the entire _{root_name}_ {root_rank} (TaxID {root_taxid}).")
         
         # Fetch root stats dynamically
-        root_metadata = database.build_phylum_metadata(conn, [root_taxid], exclude_empty=False)
+        root_metadata = get_phylum_metadata_cached(conn, tuple([root_taxid]), exclude_empty=False)
         if root_metadata and root_taxid in root_metadata:
             stats = root_metadata[root_taxid]
             
@@ -319,7 +345,7 @@ def main():
     if root_taxid and root_name != "Unknown" and query_taxids:
         st.header("Tree Visualization")
         
-        with st.container(border=True):
+        with st.form("tree_settings_form", border=True):
             st.subheader("Filter Nodes")
             filter_options = {
                 "Assemblies": "c_ass",
@@ -380,8 +406,10 @@ def main():
 
                 include_counts = st.toggle("Show Numeric Details in Tree", value=True, help="Toggle display of per-feature resource counts in the tree visualization.")
 
+            submitted = st.form_submit_button("Generate Visualization", type="primary", icon=":material/account_tree:")
+
         # 3. Generate Visualization on button click
-        if st.button("Generate Visualization", type="primary", icon=":material/account_tree:"):
+        if submitted:
             if not target_rank:
                 st.error("Cannot generate tree: Root taxon is at species level or lower, no further taxonomic breakdown is possible.")
                 st.stop()
@@ -392,7 +420,7 @@ def main():
             with st.spinner(f"Aggregating data and filtering clades..."):
                 
                 # Fetch data for all found taxids
-                phylum_metadata = database.build_phylum_metadata(conn, query_taxids, exclude_empty)
+                phylum_metadata = get_phylum_metadata_cached(conn, tuple(query_taxids), exclude_empty)
                 
                 # Apply multi-select filtering
                 if selected_filters and phylum_metadata:
@@ -428,25 +456,22 @@ def main():
                     st.stop()
 
             with st.spinner("Rendering phylogenetic tree..."):
-                if "session_id" not in st.session_state:
-                    st.session_state.session_id = uuid.uuid4().hex
-
-                tmp_svg = f"temp_tree_{st.session_state.session_id}.svg"
+                svg_bytes = generate_tree_svg_cached(phylum_metadata, include_counts)
                 
-                ctx = mp.get_context('spawn')
-                p = ctx.Process(target=visualization.render_tree_in_process, args=(phylum_metadata, include_counts, tmp_svg))
-                p.start()
-                p.join()
-                
-                if p.exitcode != 0 or not os.path.exists(tmp_svg):
+                if svg_bytes is None:
                     st.error("Failed to render the tree. This is usually due to Qt/X11 rendering restrictions.")
                     st.stop()
                 
+                # st.image throws PIL.UnidentifiedImageError when fed raw SVG bytes.
+                # Writing back to a temporary file allows Streamlit to bypass PIL via extension
+                if "session_id" not in st.session_state:
+                    st.session_state.session_id = uuid.uuid4().hex
+                tmp_svg = f"temp_tree_{st.session_state.session_id}.svg"
+                
+                with open(tmp_svg, "wb") as f:
+                    f.write(svg_bytes)
+                    
                 st.image(tmp_svg, use_container_width=True)
-                
-                with open(tmp_svg, "rb") as f:
-                    svg_bytes = f.read()
-                
                 os.remove(tmp_svg)
                 
                 st.download_button(
