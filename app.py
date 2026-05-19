@@ -389,16 +389,16 @@ def main():
                 valid_options_limit.append("Custom")
                 
                 # Determine smart default index
-                if "50" in valid_options_limit:
-                    default_idx = valid_options_limit.index("50")
+                if "25" in valid_options_limit:
+                    default_idx = valid_options_limit.index("25")
                 else:
-                    # If 50 is too high, pick the last numeric option before "All" (which is the effective max) or All.
+                    # If 25 is too high, pick the last numeric option before "All" (which is the effective max) or All.
                     default_idx = max(0, len(valid_options_limit) - 2)
                 
                 selected_limit = st.selectbox("Max nodes to display", valid_options_limit, index=default_idx, key="limit_selection", help=f"Hard cap set to {HARD_CAP} nodes for performance.")
                 
                 if selected_limit == "Custom":
-                    top_n = st.number_input("Enter custom max nodes", min_value=2, max_value=effective_max, value=min(50, effective_max), step=1)
+                    top_n = st.number_input("Enter custom max nodes", min_value=2, max_value=effective_max, value=min(25, effective_max), step=1)
                 elif selected_limit.startswith("All"):
                     top_n = effective_max
                 else:
