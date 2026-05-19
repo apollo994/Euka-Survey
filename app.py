@@ -40,6 +40,19 @@ def get_ncbi():
     return NCBITaxa()
 
 @st.cache_data(max_entries=200, show_spinner=False)
+def get_taxa_count_cached(_conn, root_taxid, target_rank):
+    """Fast SQL count for UI without loading rows into memory."""
+    if not root_taxid or not target_rank:
+        return 0
+    try:
+        cursor = _conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM precomputed_taxa WHERE root_taxid = ? AND target_rank = ?", (int(root_taxid), target_rank))
+        result = cursor.fetchone()
+        return result[0] if result else 0
+    except sqlite3.OperationalError:
+        return 0
+
+@st.cache_data(max_entries=200, show_spinner=False)
 def fetch_taxa_cached(_conn, root_taxid, target_rank):
     """Fetch taxa from DB if precomputed, safely falling back to ETE3."""
     if root_taxid is None or target_rank is None:
@@ -59,6 +72,13 @@ def fetch_taxa_cached(_conn, root_taxid, target_rank):
 def get_phylum_metadata_cached(_conn, taxids: tuple, exclude_empty: bool):
     """Wrapper to cache the heavy database computation of phylum/clade metadata."""
     return database.build_phylum_metadata(_conn, list(taxids), exclude_empty)
+
+@st.cache_data(max_entries=50, show_spinner=False)
+def get_filtered_taxa_metadata_cached(_conn, root_taxid, target_rank, exclude_empty, filter_keys_tuple, filter_logic, sort_by_key, top_n):
+    """Wrapper to cache the pure SQL filtering and mapping retrieval."""
+    return database.get_filtered_taxa_metadata(
+        _conn, root_taxid, target_rank, exclude_empty, list(filter_keys_tuple), filter_logic, sort_by_key, top_n
+    )
 
 @st.cache_data(max_entries=50, show_spinner=False)
 def generate_tree_svg_cached(phylum_metadata: dict, include_counts: bool) -> bytes:
@@ -213,16 +233,23 @@ def main():
 
         # Provide reactive feedback on tree size
         query_taxids = []
-        query_taxa = None
         num_nodes = 0
+        is_precomputed = False
         with q_cols[2]:
             st.write("") # small alignment spacing
             if root_taxid and target_rank and root_name != "Unknown":
                 try:
-                    query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
-                    if query_taxa:
-                        query_taxids = [t[0] for t in query_taxa]
-                        num_nodes = len(query_taxids)
+                    num_nodes = get_taxa_count_cached(conn, root_taxid, target_rank)
+                    if num_nodes > 0:
+                        is_precomputed = True
+                    else:
+                        # Fallback for dynamic/non-canonical queries
+                        query_taxa = fetch_taxa_cached(conn, root_taxid, target_rank)
+                        if query_taxa:
+                            query_taxids = [t[0] for t in query_taxa]
+                            num_nodes = len(query_taxids)
+
+                    if num_nodes > 0:
                         st.info(f"Tree size: **{num_nodes}** {target_rank} nodes", icon="🌲")
                         if num_nodes > 100:
                             st.caption("High node counts may take longer to compute and render.")
@@ -342,7 +369,7 @@ def main():
 
     st.space("xsmall")
     # --- Tree Visualization Settings & Generation --- #
-    if root_taxid and root_name != "Unknown" and query_taxids:
+    if root_taxid and root_name != "Unknown" and num_nodes > 0:
         st.header("Tree Visualization")
         
         with st.form("tree_settings_form", border=True):
@@ -413,42 +440,48 @@ def main():
             if not target_rank:
                 st.error("Cannot generate tree: Root taxon is at species level or lower, no further taxonomic breakdown is possible.")
                 st.stop()
-            if not query_taxids:
+            if num_nodes == 0:
                 st.error(f"Cannot generate tree. No {target_rank}s found or invalid TaxID {root_taxid}.")
                 st.stop()
                 
             with st.spinner(f"Aggregating data and filtering clades..."):
                 
-                # Fetch data for all found taxids
-                phylum_metadata = get_phylum_metadata_cached(conn, tuple(query_taxids), exclude_empty)
+                filter_keys = [filter_options[f] for f in selected_filters] if selected_filters else []
                 
-                # Apply multi-select filtering
-                if selected_filters and phylum_metadata:
-                    filtered_metadata = {}
-                    filter_keys = [filter_options[f] for f in selected_filters]
+                if is_precomputed:
+                    # Use Pure SQL function to push filtering, sorting, and limiting to the database
+                    phylum_metadata, total_matches = get_filtered_taxa_metadata_cached(
+                        conn, root_taxid, target_rank, exclude_empty, tuple(filter_keys), filter_logic, sort_by_key, top_n
+                    )
+                else:
+                    # Fallback pipeline for non-canonical roots (query_taxids loaded via ETE3)
+                    phylum_metadata = get_phylum_metadata_cached(conn, tuple(query_taxids), exclude_empty)
                     
-                    for taxid, stats in phylum_metadata.items():
-                        if filter_logic == "Match ALL (AND)":
-                            if all(stats.get(k, 0) > 0 for k in filter_keys):
-                                filtered_metadata[taxid] = stats
-                        else:  # Match ANY (OR)
-                            if any(stats.get(k, 0) > 0 for k in filter_keys):
-                                filtered_metadata[taxid] = stats
-                    phylum_metadata = filtered_metadata
+                    if filter_keys and phylum_metadata:
+                        filtered_metadata = {}
+                        for taxid, stats in phylum_metadata.items():
+                            if filter_logic == "Match ALL (AND)":
+                                if all(stats.get(k, 0) > 0 for k in filter_keys):
+                                    filtered_metadata[taxid] = stats
+                            else:  # Match ANY (OR)
+                                if any(stats.get(k, 0) > 0 for k in filter_keys):
+                                    filtered_metadata[taxid] = stats
+                        phylum_metadata = filtered_metadata
+                        
+                    total_matches = len(phylum_metadata) if phylum_metadata else 0
+                    
+                    if phylum_metadata:
+                        if sort_by_key.startswith('c_'):
+                            s_key = sort_by_key.replace('c_', 's_')
+                            sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1][s_key]), reverse=True)
+                        else:
+                            sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1]['c_ass']), reverse=True)
+                        phylum_metadata = dict(sorted_items[:top_n])
                 
-                # Sort and subset to Top N
-                if phylum_metadata:
-                    if sort_by_key.startswith('c_'):
-                        s_key = sort_by_key.replace('c_', 's_')
-                        sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1][s_key]), reverse=True)
-                    else:
-                        sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1]['c_ass']), reverse=True)
-                    phylum_metadata = dict(sorted_items[:top_n])
-            
                 # Show exclusion statistics
-                nodes_excluded = len(query_taxids) - len(phylum_metadata)
+                nodes_excluded = num_nodes - total_matches
                 if nodes_excluded > 0:
-                    st.info(f"**Nodes included:** {len(phylum_metadata)}/{len(query_taxids)} "
+                    st.info(f"**Nodes included:** {total_matches}/{num_nodes} "
                             f"({nodes_excluded} excluded due to filtering criteria)")
                 
                 if not phylum_metadata:
@@ -488,14 +521,17 @@ def main():
 
     st.space("xsmall")
     # --- TSV Data Export Section --- #
-    if root_taxid and target_rank and query_taxa and root_name != "Unknown":
+    if root_taxid and target_rank and root_name != "Unknown" and num_nodes > 0:
         st.header("Data Export")
         st.write("Download the complete overview of the current query as a TSV file.")
         
         # In Streamlit, data for download_button is evaluated on render. 
         # We cache the generator to maintain UI performance instead of a 2-button prepare flow.
         tsv_filename = f"{root_name.replace(' ', '_')}_{target_rank}_data.tsv"
-        tsv_data = utils.generate_tsv(conn, query_taxa)
+        
+        # We pass the cacheable function over to the TSV generator to resolve the taxa inside 
+        # the cached bounds and trigger the Streamlit Spinner, stopping it from freezing the UI.
+        tsv_data = utils.generate_tsv(conn, root_taxid, target_rank, fetch_taxa_cached)
         
         st.download_button(
             label="Download TSV",
