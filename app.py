@@ -39,7 +39,7 @@ def get_ncbi():
     # However, st.cache_resource for NCBITaxa is often the cause of sqlite3.ProgrammingError.
     return NCBITaxa()
 
-@st.cache_data(max_entries=200)
+@st.cache_data(max_entries=200, show_spinner=False)
 def fetch_taxa_cached(_conn, root_taxid, target_rank):
     """Fetch taxa from DB if precomputed, safely falling back to ETE3."""
     if root_taxid is None or target_rank is None:
@@ -55,7 +55,7 @@ def fetch_taxa_cached(_conn, root_taxid, target_rank):
         
     return taxonomy.get_taxa_at_rank(root_taxid, target_rank)
 
-@st.cache_data(max_entries=100)
+@st.cache_data(max_entries=100, show_spinner=False)
 def get_phylum_metadata_cached(_conn, taxids: tuple, exclude_empty: bool):
     """Wrapper to cache the heavy database computation of phylum/clade metadata."""
     return database.build_phylum_metadata(_conn, list(taxids), exclude_empty)
