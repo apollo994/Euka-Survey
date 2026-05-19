@@ -31,14 +31,6 @@ def get_db_ready():
 def get_db_connection():
     return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, check_same_thread=False)
 
-@st.cache_resource
-def get_ncbi():
-    # ETE3 uses SQLite internally. To allow cross-thread access, 
-    # we initialize it without caching and instead use a thread-local approach
-    # or recreate it as needed if threading issues persist.
-    # However, st.cache_resource for NCBITaxa is often the cause of sqlite3.ProgrammingError.
-    return NCBITaxa()
-
 @st.cache_data(max_entries=200, show_spinner=False)
 def get_taxa_count_cached(_conn, root_taxid, target_rank):
     """Fast SQL count for UI without loading rows into memory."""
@@ -388,11 +380,15 @@ def main():
             
             st.subheader("Sorting & Limits")
             sort_options = {
-                "Species": "n_rows",
-                "Assemblies": "c_ass",
-                "Annotations": "c_ann",
-                "RNA-Seq (Any)": "c_rna",
-                "Long-Read RNA": "c_lng"
+                "Total Unique Species": "n_rows",
+                "Species with Assemblies": "c_ass",
+                "Total Assembly Runs": "s_ass",
+                "Species with Annotations": "c_ann",
+                "Total Annotation Runs": "s_ann",
+                "Species with RNA-Seq (Any)": "c_rna",
+                "Total RNA-Seq Runs (Any)": "s_rna",
+                "Species with Long-Read RNA": "c_lng",
+                "Total Long-Read RNA Runs": "s_lng"
             }
             cols = st.columns(2)
             

@@ -2,7 +2,6 @@
 import os
 import re
 import shutil
-import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from ete3 import NCBITaxa, TreeStyle, TextFace, ImgFace, NodeStyle
@@ -58,7 +57,6 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
         display.stop()
 
 # ── Constants ────────────────────────────────────────────────────────────────
-DATA_COLS = ['short_read_count', 'long_read_count', 'assembly_count', 'annotation_count']
 TMP_DIR   = ".tmp_bars"
 
 # Paired ColorBrewer palette
@@ -82,75 +80,6 @@ _LEGEND_IMG_PATH = None
 
 
 # ── Data loading ──────────
-def load_data(data_dir, ncbi, min_organisms, exclude_empty):
-    """Load TSV files, compute counts and percentages per taxon."""
-    phylum_metadata  = {}
-    excluded_count   = 0
-
-    for filename in os.listdir(data_dir):
-        if not filename.endswith(".tsv"):
-            continue
-        match = re.search(r'^(\d+)_', filename)
-        if not match:
-            print(f"  Warning – skipping {filename}: no taxid prefix found.")
-            continue
-        
-        taxid = int(match.group(1))
-        filepath = os.path.join(data_dir, filename)
-
-        try:
-            df = pd.read_csv(
-                filepath, sep=r'\s+', skiprows=1,
-                names=['taxid'] + DATA_COLS
-            )
-            n = len(df)
-            if n < min_organisms:
-                continue
-
-            if n > 0:
-                c_ass = int((df['assembly_count']  > 0).sum())
-                c_ann = int((df['annotation_count'] > 0).sum())
-                c_rna = int(((df['short_read_count'] > 0) |
-                              (df['long_read_count']  > 0)).sum())
-                c_lng = int((df['long_read_count']   > 0).sum())
-
-                s_ass = int(df['assembly_count'].sum())
-                s_ann = int(df['annotation_count'].sum())
-                s_rna = int(df['short_read_count'].sum() + df['long_read_count'].sum())
-                s_lng = int(df['long_read_count'].sum())
-
-                # Guard: annotation cannot logically exceed assembly
-                # NOTE: LOOK INTO THIS
-                c_ann = min(c_ann, c_ass)
-                c_lng = min(c_lng, c_rna)
-
-                p_ass = c_ass / n * 100
-                p_ann = c_ann / n * 100
-                p_rna = c_rna / n * 100
-                p_lng = c_lng / n * 100
-            else:
-                c_ass = c_ann = c_rna = c_lng = 0
-                s_ass = s_ann = s_rna = s_lng = 0
-                p_ass = p_ann = p_rna = p_lng = 0.0
-
-            if exclude_empty and c_ass == 0 and c_ann == 0 and c_rna == 0 and c_lng == 0:
-                excluded_count += 1
-                continue
-
-            phylum_metadata[taxid] = {
-                'n_rows': n,
-                'c_ass': c_ass, 'c_ann': c_ann, 'c_rna': c_rna, 'c_lng': c_lng,
-                's_ass': s_ass, 's_ann': s_ann, 's_rna': s_rna, 's_lng': s_lng,
-                'p_ass': p_ass, 'p_ann': p_ann, 'p_rna': p_rna, 'p_lng': p_lng,
-            }
-
-        except Exception as e:
-            print(f"  Warning – skipping {filename}: {e}")
-
-    if exclude_empty and excluded_count > 0:
-        print(f"Excluded {excluded_count} empty taxa.")
-
-    return phylum_metadata
 
 
 # ── Bar chart helpers ────────────────────────────────────────────────────────
