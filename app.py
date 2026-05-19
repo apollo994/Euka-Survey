@@ -380,15 +380,15 @@ def main():
             
             st.subheader("Sorting & Limits")
             sort_options = {
-                "Total Unique Species": "n_rows",
+                "Unique Species": "n_rows",
                 "Species with Assemblies": "c_ass",
-                "Total Assembly Runs": "s_ass",
                 "Species with Annotations": "c_ann",
-                "Total Annotation Runs": "s_ann",
                 "Species with RNA-Seq (Any)": "c_rna",
-                "Total RNA-Seq Runs (Any)": "s_rna",
                 "Species with Long-Read RNA": "c_lng",
-                "Total Long-Read RNA Runs": "s_lng"
+                "Assemblies Runs": "s_ass",
+                "Annotations": "s_ann",
+                "RNA-Seq Runs (Any)": "s_rna",
+                "Long-Read RNA-Seq Runs": "s_lng"
             }
             cols = st.columns(2)
             
