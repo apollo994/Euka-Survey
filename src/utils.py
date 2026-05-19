@@ -15,11 +15,15 @@ def ensure_database(db_path, download_url):
             return False
     return True
 
-@st.cache_data(show_spinner=False)
-def generate_tsv(_conn, query_taxa):
+@st.cache_data(show_spinner="Preparing data for download...")
+def generate_tsv(_conn, root_taxid, target_rank, _fetch_func):
     """
-    Generate a TSV string for the given query taxa.
+    Generate a TSV string for the given query limit dynamically.
     """
+    
+    # We resolve the actual taxa inside the cached function to avoid hashing huge lists
+    query_taxa = _fetch_func(_conn, root_taxid, target_rank)
+
     if not query_taxa:
         return ""
     
