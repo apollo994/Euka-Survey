@@ -95,8 +95,8 @@ def generate_tree_svg_cached(phylum_metadata: dict, include_counts: bool) -> byt
 # --------------------- Main App Logic --------------------- #
 def main():
     # --- Main UI Layout ---
-    st.title("EukaSurvey")
-    st.subheader("The Genomic Resource Explorer for Eukaryotes", divider="blue")
+    st.title("EukaSurvey", anchor=False)
+    st.subheader("The Genomic Resource Explorer for Eukaryotes", divider="blue", anchor=False)
     st.markdown("Visualize genomic data availability across the Eukaryotic Tree of Life.")
 
     # 1. Initialize dependencies
@@ -133,7 +133,7 @@ def main():
 
     # 3. Query Configuration
     with st.container(border=True):
-        st.subheader("Query Configuration") #, icon=":material/settings:"
+        st.header("Query Configuration", anchor=False)
         
         # Root taxon selection with common clades for convenience
         common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
@@ -142,11 +142,12 @@ def main():
         
         with q_cols[0]:
             choice = st.selectbox(
-                "Root Taxon (NCBI ID or Common Clades):", 
+                "Root Taxon ID", 
                 ["Enter your own"] + common_taxa,
                 index=1,
                 placeholder="Choose a valid NCBI Taxon ID",
-                key="root_taxon_selection"
+                key="root_taxon_selection",
+                help="Choose from a selection of commonly surveyed clades or enter any valid NCBI Taxon ID to define the root of your tree query."
             )
 
             # Handle the Root Taxon ID selection
@@ -210,10 +211,11 @@ def main():
                     st.session_state.rank_selection = valid_options[0]
                     
                 target_rank = st.selectbox(
-                    "Breakdown by Rank:", 
+                    "Breakdown by Rank",
                     valid_options, 
                     placeholder=None,
-                    key="rank_selection"
+                    key="rank_selection",
+                    help="Select the taxonomic rank to slice the tree. Only ranks below the selected root taxon are available."
                 )
             else:
                 # Edge case: Selected root taxon is species or lower
@@ -252,7 +254,7 @@ def main():
 
     # --- Root Taxon Stat Summary --- #
     if root_taxid and root_name != "Unknown":
-        st.header(f"Genomic Resource Summary: {root_name}")
+        st.header(f"Genomic Resource Summary", anchor=False)
         st.markdown(f"Overview of available resources across the entire _{root_name}_ {root_rank} (TaxID {root_taxid}).")
         
         # Fetch root stats dynamically
@@ -262,7 +264,7 @@ def main():
             
             # Prominent top-level metric for Total Species
             st.metric(
-                label=":material/groups: Total Species in Clade", 
+                label=f":material/groups: Total Species under {root_name}", 
                 value=f"{int(stats['n_rows']):,}",
                 help="Total number of unique species tracked in this clade"
             )
@@ -277,7 +279,7 @@ def main():
                     st.metric(
                         label="Species Covered", 
                         value=f"{int(stats['c_ass']):,}",
-                        help="Unique species with at least one genome assembly"
+                        help="Unique species with at least one genome assembly",
                     )
                     st.metric(
                         label="Total Assemblies", 
@@ -347,23 +349,23 @@ def main():
     st.space("xsmall")
     # --- Tree Visualization Settings & Generation --- #
     if root_taxid and root_name != "Unknown" and num_nodes > 0:
-        st.header("Tree Visualization")
+        st.header("Tree Visualization", anchor=False)
         
         with st.form("tree_settings_form", border=True):
-            st.subheader("Filter Nodes")
+            st.subheader("Filter Nodes", anchor=False)
             filter_options = {
                 "Assemblies": "c_ass",
                 "Annotations": "c_ann",
                 "RNA-Seq (Any)": "c_rna",
                 "Long-Read RNA": "c_lng"
             }
-            selected_filters = st.multiselect("Require data for (leaves node out if it lacks data):", list(filter_options.keys()), placeholder="Select features...")
+            selected_filters = st.multiselect("Require data for (leaves node out if it lacks data)", list(filter_options.keys()), placeholder="Select features...")
             
             filter_logic = "Match ALL (AND)"
             if len(selected_filters) > 1:
                 filter_logic = st.segmented_control("Condition", ["Match ALL (AND)", "Match ANY (OR)"], default="Match ALL (AND)")
             
-            st.subheader("Sorting & Limits")
+            st.subheader("Sorting & Limits", anchor=False)
             sort_options = {
                 "Unique Species": "n_rows",
                 "Species with Assemblies": "c_ass",
@@ -378,7 +380,7 @@ def main():
             cols = st.columns(2)
             
             with cols[0]:
-                sort_by_label = st.selectbox("Sort top nodes by number of: ", list(sort_options.keys()), key="sort_by_selection")
+                sort_by_label = st.selectbox("Sort top nodes by number of ", list(sort_options.keys()), key="sort_by_selection")
                 sort_by_key = sort_options[sort_by_label]
                 
                 exclude_empty = st.toggle("Exclude Empty Taxa (Zero data across all fields)", value=True)
@@ -503,7 +505,7 @@ def main():
     st.space("xsmall")
     # --- TSV Data Export Section --- #
     if root_taxid and target_rank and root_name != "Unknown" and num_nodes > 0:
-        st.header("Data Export")
+        st.header("Export Data", anchor=False)
         st.write("Download the complete overview of the current query as a TSV file.")
         
         # In Streamlit, data for download_button is evaluated on render. 
