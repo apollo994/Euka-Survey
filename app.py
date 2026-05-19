@@ -284,6 +284,8 @@ def main():
                         value=f"{int(stats['s_ass']):,}",
                         help="Total number of genome assemblies across all species"
                     )
+                    ncbi_url = f"https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon={root_taxid}"
+                    st.markdown(f"[View on NCBI]({ncbi_url}) :material/open_in_new:")
                     
             # Annotations Card
             with cols[1]:
@@ -299,6 +301,8 @@ def main():
                         value=f"{int(stats['s_ann']):,}",
                         help="Total number of annotated genomes across all species"
                     )
+                    anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={root_taxid}"
+                    st.markdown(f"[View on Annotrieve]({anno_url}) :material/open_in_new:")
                     
             # RNA-Seq Card
             with cols[2]:
@@ -314,6 +318,8 @@ def main():
                         value=f"{int(stats['s_rna']):,}",
                         help="Total number of RNA-Seq runs across all species"
                     )
+                    ena_rna_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({root_taxid})%20AND%20library_strategy%3D%22rna-seq%22&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
+                    st.markdown(f"[View on ENA]({ena_rna_url}) :material/open_in_new:")
                     
             # Long-Read RNA Card
             with cols[3]:
@@ -329,35 +335,14 @@ def main():
                         value=f"{int(stats['s_lng']):,}",
                         help="Total number of Long-Read RNA-Seq runs across all species"
                     )
+                    ena_lng_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({root_taxid})%20AND%20library_strategy%3D%22rna-seq%22%20AND%20(instrument_platform%3D%22OXFORD_NANOPORE%22%20OR%20instrument_platform%3D%22PACBIO_SMRT%22)&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy%2Cinstrument_platform&limit=0"
+                    st.markdown(f"[View on ENA]({ena_lng_url}) :material/open_in_new:")
         else:
             st.warning("No data found for this Root Taxon.")
             
         # st.divider()
     elif root_taxid and root_name == "Unknown":
         st.error(f"TaxID {root_taxid} does not exist in the NCBI taxonomy database.")
-
-    # --- Open Query-Specific Database Buttons --- #
-    if root_taxid and root_name != "Unknown":
-        st.header("Explore Primary Databases")
-    
-        with st.container(horizontal=True, gap="medium"):
-            cols = st.columns(3, gap="medium", width="stretch", border=True)
-            
-            with cols[0]:
-                st.subheader("ENA Browser", text_alignment="center")
-                ena_url = f"https://www.ebi.ac.uk/ena/browser/advanced-search?result=read_run&query=tax_tree({root_taxid})%20AND%20library_strategy%3D%22rna-seq%22&fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
-                st.markdown(f'<a href="{ena_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #18974c; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open RNA-Seq Reads for {root_name}</a>', unsafe_allow_html=True)
-    
-            with cols[1]:
-                st.subheader("NCBI Datasets", text_alignment="center")
-                ncbi_url = f"https://www.ncbi.nlm.nih.gov/datasets/genome/?taxon={root_taxid}"
-                st.markdown(f'<a href="{ncbi_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #20558a; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Genome Assemblies for {root_name}</a>', unsafe_allow_html=True)
-    
-            with cols[2]:
-                st.subheader("Annotrieve", text_alignment="center")
-                anno_url = f"https://genome.crg.es/annotrieve/annotations/details/?taxon={root_taxid}"
-                st.markdown(f'<a href="{anno_url}" target="_blank" style="display: block; width: 100%; text-align: center; background-color: #f07900; color: white; padding: 10px; border-radius: 5px; text-decoration: none; font-weight: bold;">Open Annotations for {root_name}</a>', unsafe_allow_html=True)
-        # st.divider()
 
     st.space("xsmall")
     # --- Tree Visualization Settings & Generation --- #
