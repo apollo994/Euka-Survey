@@ -385,10 +385,10 @@ def main():
                 "Species with Annotations": "c_ann",
                 "Species with RNA-Seq (Any)": "c_rna",
                 "Species with Long-Read RNA": "c_lng",
-                "Assemblies Runs": "s_ass",
+                "Assemblies": "s_ass",
                 "Annotations": "s_ann",
-                "RNA-Seq Runs (Any)": "s_rna",
-                "Long-Read RNA-Seq Runs": "s_lng"
+                "RNA-Seq experiments (Any)": "s_rna",
+                "Long-Read RNA-Seq experiments": "s_lng"
             }
             cols = st.columns(2)
             
