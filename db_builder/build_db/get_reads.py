@@ -15,7 +15,7 @@ def _ena_search() -> tuple[dict[int, int], dict[int, int], int]:
     """Query ENA portal API (POST) for RNA-seq reads. Limit=0 fetches all records in one request."""
     payload = {
         "result": "read_run",
-        "query": f'tax_tree({EUKARYOTE_TXID}) AND library_strategy="rna-seq"',
+        "query": f'tax_tree({EUKARYOTE_TXID}) AND (library_source="transcriptomic" OR library_strategy="rna-seq")',
         "fields": "tax_id,instrument_platform",
         "format": "json",
         "limit": 0
