@@ -11,6 +11,9 @@ from pathlib import Path
 # Add project root to path so we can import src and db_builder modules
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from ete3 import NCBITaxa
+
+from src.ete_utils import get_all_descendant_taxids
 from db_builder.build_db.get_assemblies import get_assemblies
 from db_builder.build_db.get_annotations import fetch_annotrieve_annotations
 from db_builder.build_db.get_reads import fetch_ena_reads
@@ -23,20 +26,25 @@ def main():
     print("--- Starting Eukaryote Feature Pipeline ---")
     start_time = time.time()
 
-    # 1. Get assemblies
-    print("\n[1/4] Getting assembly taxids...")
+    # 1. Get all species' taxIDs 
+    print("\n[1/5] Getting all descendant species...")
+    all_taxids = get_all_descendant_taxids(EUKARYOTE_TXID)
+    print(f"  Found {len(all_taxids)} descendant species of Eukaryota (taxID {EUKARYOTE_TXID})")
+
+    # 2. Get assemblies
+    print("\n[2/5] Getting assembly taxids...")
     print("Fetching assemblies using NCBI datasets CLI...")
     assembly_taxids = get_assemblies(EUKARYOTE_TXID)
     print(f"  Found assemblies for {len(assembly_taxids)} unique taxa")
     
-    # 2. Get annotations
-    print("\n[2/4] Getting annotation taxids...")
+    # 3. Get annotations
+    print("\n[3/5] Getting annotation taxids...")
     print("Fetching annotations from Annotrieve...")
     annotation_taxids = fetch_annotrieve_annotations()
     print(f"  Found annotations for {len(annotation_taxids)} taxa")
     
-    # 3. Get reads
-    print("\n[3/4] Getting short and long read taxids...")
+    # 4. Get reads
+    print("\n[4/5] Getting short and long read taxids...")
     print("Fetching ENA RNA-seq reads...")
     long_read_taxids, short_read_taxids, count = fetch_ena_reads()
     print(f"  Fetched {count} runs")
@@ -45,13 +53,14 @@ def main():
     if 9606 not in short_read_taxids.keys() or 10090 not in short_read_taxids.keys():
         print(f"  [WARNING] Humans (9606) and mice (10090) were excluded from the query to greatly reduce the number of records")
     
-    # 4. Build database
-    print("\n[4/4] Building SQLite database...")
+    # 5. Build database
+    print("\n[5/5] Building SQLite database...")
     today_str = datetime.date.today().strftime("%Y_%m_%d")
     output_db = Path(f"eukaryote_taxid_features_{today_str}.db")
     print(f"Saving records to {output_db.name}...")
     
     rows_written = build_database(
+        all_taxids=all_taxids,
         assembly_taxids=assembly_taxids,
         annotation_taxids=annotation_taxids,
         short_read_taxids=short_read_taxids,

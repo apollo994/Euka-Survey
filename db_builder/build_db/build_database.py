@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 def build_database(
+    all_taxids: set[int],
     assembly_taxids: dict[int, int],
     annotation_taxids: dict[int, int],
     short_read_taxids: dict[int, int],
@@ -17,13 +18,15 @@ def build_database(
     """
     Build (or update) the SQLite database from source dictionaries.
 
-    Only taxa with at least one data point (assembly, annotation, or reads) are written.
+    Uses all known leaf taxids so that 'Total Organisms' properly 
+    counts every species (leaf) node, even those without any features.
     Uses INSERT OR REPLACE so this is safe to re-run incrementally.
 
     Returns the number of rows written.
     """
     featured_taxids: set[int] = (
-        assembly_taxids.keys()
+        all_taxids
+        | assembly_taxids.keys()
         | annotation_taxids.keys()
         | short_read_taxids.keys()
         | long_read_taxids.keys()

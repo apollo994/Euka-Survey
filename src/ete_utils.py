@@ -4,6 +4,7 @@ Utilizes the local NCBI taxonomy database via the ete3 library.
 """
 
 from ete3 import NCBITaxa
+import sqlite3
 
 def get_name_from_taxid(taxid: int) -> str:
     """Get the scientific name for a given taxonomic ID."""
@@ -20,3 +21,20 @@ def get_rank_from_taxid(taxid: int) -> str:
     ncbi = NCBITaxa()
     ranks = ncbi.get_rank([taxid])
     return ranks.get(taxid, "clade")
+
+def get_all_descendant_taxids(parent_taxid: int) -> set[int]:
+    """Fetch all descendant taxIDs of parent_taxid directly from the ete3 SQLite db."""
+    query = """
+        WITH RECURSIVE subtree(taxid) AS (
+            SELECT taxid FROM species WHERE taxid = ?
+            UNION ALL
+            SELECT s.taxid FROM species AS s
+            JOIN subtree AS t ON s.parent = t.taxid
+        )
+        SELECT taxid FROM subtree
+    """
+    conn = sqlite3.connect(NCBITaxa().dbfile)
+    try:
+        return {row[0] for row in conn.execute(query, [parent_taxid])}
+    finally:
+        conn.close()
