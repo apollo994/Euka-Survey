@@ -151,6 +151,13 @@ converts any exception into a `PipelineError` tagged with the step number):
 Output is written atomically: `eukaryote_taxid_features_YYYY_MM_DD.db.partial` →
 `os.replace` rename on success, then `_stamp_schema_version` writes `PRAGMA user_version`.
 
+Steps 1–4 (the network/CLI fetches) pickle their return values into a sibling snapshot
+directory `.eukaryote_taxid_features_YYYY_MM_DD.db.partial.snapshots/`. On retry, cached
+snapshots are loaded instead of re-fetching; on successful completion they're deleted. Steps
+5–7 don't snapshot (the `.partial` DB is the state). Use `--from-step N` to purge snapshots
+≥ N before a run when upstream data is stale. Helpers + behavior covered by
+`tests/test_pipeline_snapshots.py`.
+
 The monthly GitHub Action (`.github/workflows/update_db.yml`) runs the whole pipeline under
 `astral-sh/setup-uv@v6`, renames the dated output to `eukaryotes.db`, runs a size + row-count
 smoke test, and publishes it as a date-tagged GitHub Release

@@ -55,6 +55,55 @@ Each step is wrapped in a decorator that converts any exception into a
 `PipelineError` tagged with the step number, so the top-level handler
 logs a clean failure summary and exits non-zero.
 
+### Resumability (per-step snapshots)
+
+Fetch steps **1–4** (descendants, assemblies, annotations, ENA reads)
+pickle their return value into a per-build snapshot directory
+`.eukaryote_taxid_features_YYYY_MM_DD.db.partial.snapshots/`. On retry,
+the cached snapshot is loaded instead of re-fetching — so an ENA hiccup
+at step 4 no longer forces a fresh ~30-minute network round-trip.
+
+- **Save** happens immediately after the step succeeds. Writes go to
+  `stepN_<key>.pkl.tmp`, then `os.replace` into place, so a kill mid-write
+  cannot leave a half-written snapshot.
+- **Load** happens at the start of each fetch step. A cache hit logs
+  `[N/7] Resumed from snapshot: ...` and skips the step entirely.
+- **Cleanup** happens after the final atomic `.partial → .db` rename and
+  schema-version stamp. On a failure, snapshots are kept (and the log
+  tells you the directory) so the next invocation resumes.
+- **Boundary:** steps 5–7 write directly into the `.partial` DB — there
+  is no per-step snapshot for them, because the `.partial` file *is* the
+  snapshot for downstream steps. On retry the `.partial` is discarded
+  (it may be mid-write) and steps 5–7 run again from the cached fetches.
+  Steps 5–7 are cheap relative to the network steps, so re-running them
+  is not the bottleneck.
+
+The snapshot directory's leading-dot name keeps it outside the
+`eukaryote_taxid_features_*.db` glob used by the workflow's rename
+step and the local `mv` recipe below.
+
+#### `--from-step N` (force re-fetch)
+
+If you know upstream data is stale (e.g. ENA returned a degenerate
+result and you want a clean step-4 re-fetch), pass `--from-step N` to
+purge snapshots for steps ≥ N before the run:
+
+```bash
+uv run python db_builder/pipeline_build_db.py --from-step 4
+```
+
+`N` is clamped to `1..7`. Cached snapshots for steps `< N` are kept;
+snapshots for steps `≥ N` are deleted.
+
+#### Manual cleanup
+
+If you ever want to reset everything (snapshots + partial DB) without
+running the pipeline:
+
+```bash
+rm -rf .eukaryote_taxid_features_*.snapshots eukaryote_taxid_features_*.db.partial
+```
+
 ---
 
 ## Tables produced
@@ -161,4 +210,8 @@ The web app's first-launch download targets that `latest` release.
 
 ## Known issues (tracked in the audit)
 
-- **No incremental processing.** The whole DB is rebuilt monthly.
+- **No incremental processing across builds.** Every monthly build
+  re-fetches the whole dataset from NCBI / Annotrieve / ENA. *Within*
+  a single build, failed steps now resume from cached snapshots (see
+  [Resumability](#resumability-per-step-snapshots) above), but there is
+  no delta-based "only fetch what changed since last release" path.
