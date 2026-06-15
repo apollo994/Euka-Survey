@@ -1,9 +1,8 @@
 import streamlit as st
 import sqlite3
 import os
-import uuid
+import tempfile
 import multiprocessing as mp
-from ete3 import NCBITaxa
 
 # Import local modules securely
 from src import taxonomy
@@ -11,6 +10,14 @@ from src import visualization
 from src import database
 from src import utils
 from src import ete_utils
+from src.constants import (
+    ALLOWED_RANKS,
+    COMMON_CLADES,
+    FULL_RANKS,
+    HARD_NODE_CAP,
+    RENDER_SUBPROCESS_TIMEOUT_SECONDS,
+    STANDARD_BREAKPOINTS,
+)
 
 # Constants
 DB_PATH = "eukaryotes.db" # For local development
@@ -73,24 +80,40 @@ def get_filtered_taxa_metadata_cached(_conn, root_taxid, target_rank, exclude_em
     )
 
 @st.cache_data(max_entries=50, show_spinner=False)
-def generate_tree_svg_cached(phylum_metadata: dict, include_counts: bool) -> bytes:
-    """Wrapper to cache SVG rendering results from the multiprocessing Qt context."""
-    session_id = uuid.uuid4().hex
-    tmp_svg = f"temp_tree_{session_id}.svg"
-    
+def generate_tree_svg_cached(phylum_metadata: dict, include_counts: bool) -> bytes | None:
+    """Render the phylogenetic tree SVG in a spawned subprocess.
+
+    PyQt5 requires its QApplication on the main thread of a process; Streamlit
+    runs callbacks on worker threads, hence the subprocess. A timeout guards
+    against a stuck Qt child hanging the Streamlit thread indefinitely.
+    """
+    tmp_fd, tmp_svg = tempfile.mkstemp(prefix="euka_tree_", suffix=".svg")
+    os.close(tmp_fd)
+
     ctx = mp.get_context('spawn')
-    p = ctx.Process(target=visualization.render_tree_in_process, args=(phylum_metadata, include_counts, tmp_svg))
+    p = ctx.Process(
+        target=visualization.render_tree_in_process,
+        args=(phylum_metadata, include_counts, tmp_svg),
+    )
     p.start()
-    p.join()
-    
-    if p.exitcode != 0 or not os.path.exists(tmp_svg):
-        return None
-        
-    with open(tmp_svg, "rb") as f:
-        svg_bytes = f.read()
-    
-    os.remove(tmp_svg)
-    return svg_bytes
+    p.join(timeout=RENDER_SUBPROCESS_TIMEOUT_SECONDS)
+
+    try:
+        if p.is_alive():
+            p.terminate()
+            p.join(timeout=5)
+            if p.is_alive():
+                p.kill()
+            return None
+
+        if p.exitcode != 0 or not os.path.exists(tmp_svg) or os.path.getsize(tmp_svg) == 0:
+            return None
+
+        with open(tmp_svg, "rb") as f:
+            return f.read()
+    finally:
+        if os.path.exists(tmp_svg):
+            os.remove(tmp_svg)
 
 # --------------------- Main App Logic --------------------- #
 def main():
@@ -136,14 +159,15 @@ def main():
         st.header("Query Configuration", anchor=False)
         
         # Root taxon selection with common clades for convenience
-        common_taxa = ["Eukaryota (2759)", "Animals (33208)", "Mammalia (40674)", "Primates (9443)", "Fungi (4751)", "Plants (33090)"]
+        common_taxa_labels = [f"{name} ({tid})" for tid, name in COMMON_CLADES.items()]
+        label_to_taxid = {f"{name} ({tid})": tid for tid, name in COMMON_CLADES.items()}
 
         q_cols = st.columns([1.5, 1, 1], gap="large")
         
         with q_cols[0]:
             choice = st.selectbox(
-                "Root Taxon ID", 
-                ["Enter your own"] + common_taxa,
+                "Root Taxon ID",
+                ["Enter your own"] + common_taxa_labels,
                 index=1,
                 placeholder="Choose a valid NCBI Taxon ID",
                 key="root_taxon_selection",
@@ -160,21 +184,10 @@ def main():
                         st.warning("Please enter a valid numeric Taxon ID.")
                     root_taxid = None
             else:
-                taxid_map = {
-                    "Eukaryota (2759)": 2759, 
-                    "Animals (33208)": 33208, 
-                    "Mammalia (40674)": 40674, 
-                    "Primates (9443)": 9443, 
-                    "Fungi (4751)": 4751, 
-                    "Plants (33090)": 33090
-                }
-                root_taxid = taxid_map[choice]
+                root_taxid = label_to_taxid[choice]
 
         # Dynamic target rank Breakdown selection based on selected root taxon
-        FULL_RANKS = ['domain', 'superkingdom', 'kingdom', 'superphylum', 'phylum', 'subphylum', 'superclass', 'class', 'subclass', 'superorder', 'order', 'suborder', 'superfamily', 'family', 'subfamily', 'genus', 'subgenus', 'species']
-        ALLOWED_RANKS = ["phylum", "class", "order", "family", "genus", "species"]
-        
-        valid_options = ALLOWED_RANKS
+        valid_options = list(ALLOWED_RANKS)
         if root_taxid:
             try:
                 # Instantiate a fresh NCBITaxa to avoid Streamlit/SQLite cross-thread connection errors
@@ -387,12 +400,10 @@ def main():
 
             with cols[1]:
                 # Dynamic node limit options based on availability and hard cap
-                HARD_CAP = 500
-                effective_max = min(num_nodes, HARD_CAP)
-                
+                effective_max = min(num_nodes, HARD_NODE_CAP)
+
                 # Filter down the breakpoints to only show those valid for the current tree size
-                standard_breakpoints = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500]
-                valid_options_limit = [str(b) for b in standard_breakpoints if b < effective_max]
+                valid_options_limit = [str(b) for b in STANDARD_BREAKPOINTS if b < effective_max]
                 
                 # Add dynamic "All" and "Custom"
                 valid_options_limit.append(f"All ({effective_max})")
@@ -405,7 +416,7 @@ def main():
                     # If 25 is too high, pick the last numeric option before "All" (which is the effective max) or All.
                     default_idx = max(0, len(valid_options_limit) - 2)
                 
-                selected_limit = st.selectbox("Max nodes to display", valid_options_limit, index=default_idx, key="limit_selection", help=f"Hard cap set to {HARD_CAP} nodes for performance.")
+                selected_limit = st.selectbox("Max nodes to display", valid_options_limit, index=default_idx, key="limit_selection", help=f"Hard cap set to {HARD_NODE_CAP} nodes for performance.")
                 
                 if selected_limit == "Custom":
                     top_n = st.number_input("Enter custom max nodes", min_value=2, max_value=effective_max, value=min(25, effective_max), step=1)
@@ -479,16 +490,16 @@ def main():
                     st.stop()
                 
                 # st.image throws PIL.UnidentifiedImageError when fed raw SVG bytes.
-                # Writing back to a temporary file allows Streamlit to bypass PIL via extension
-                if "session_id" not in st.session_state:
-                    st.session_state.session_id = uuid.uuid4().hex
-                tmp_svg = f"temp_tree_{st.session_state.session_id}.svg"
-                
-                with open(tmp_svg, "wb") as f:
-                    f.write(svg_bytes)
-                    
-                st.image(tmp_svg, use_container_width=True)
-                os.remove(tmp_svg)
+                # Writing back to a temporary file allows Streamlit to bypass PIL via extension.
+                tmp_fd, tmp_svg = tempfile.mkstemp(prefix="euka_display_", suffix=".svg")
+                os.close(tmp_fd)
+                try:
+                    with open(tmp_svg, "wb") as f:
+                        f.write(svg_bytes)
+                    st.image(tmp_svg, use_container_width=True)
+                finally:
+                    if os.path.exists(tmp_svg):
+                        os.remove(tmp_svg)
                 
                 st.download_button(
                     label="Download SVG Figure",

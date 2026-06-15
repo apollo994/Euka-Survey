@@ -59,7 +59,7 @@ If you ever want to update the raw organism features by fetching fresh NCBI/ENA/
 ```bash
 python db_builder/pipeline_build_db.py
 ```
-This pipeline will query the web, build the `taxid_features` table across all ~1.8M eukaryotic species, patch missing zero-count taxonomic entries, and natively generate the roll-up math in the `precomputed_clade_features` table.
+This pipeline will query the web, build the `taxid_features` table across all ~1.8M eukaryotic species, and generate the roll-up aggregations in the `precomputed_clade_features` table.
 
 For instantaneous UI preview responsiveness for commonly searched clades without blocking the main thread, run the taxa cache generator:
 ```bash

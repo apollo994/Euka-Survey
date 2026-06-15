@@ -3,11 +3,15 @@ Retrieves assembly information for taxonomic IDs.
 Uses the NCBI datasets CLI to identify which taxa have sequenced genome assemblies.
 """
 
+import json
+import os
 import subprocess
 import sys
-import json
 
-EUKARYOTE_TXID = 2759
+# Allow direct `python db_builder/build_db/get_assemblies.py` invocation
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from src.constants import EUKARYOTE_TXID
+
 
 def get_assemblies(txid: int) -> dict[int, int]:
     """Get a dictionary of taxonomic IDs and their assembly counts using NCBI datasets CLI tool."""

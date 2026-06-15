@@ -1,19 +1,36 @@
 import os
+import shutil
 import urllib.request
 import io
 import csv
 import streamlit as st
 from src import database
 
+_DOWNLOAD_TIMEOUT_SECONDS = 300
+
+
 def ensure_database(db_path, download_url):
-    """Ensure the SQLite DB exists, downloading it if necessary."""
-    if not os.path.exists(db_path):
-        try:
-            urllib.request.urlretrieve(download_url, db_path)
-        except Exception as e:
-            st.error(f"Could not download database: {e}")
-            return False
-    return True
+    """Ensure the SQLite DB exists, downloading it atomically if necessary.
+
+    Downloads to `{db_path}.tmp` and atomically renames on success, so a
+    partial download (e.g. network drop) never leaves a half-written file
+    that future runs would treat as valid.
+    """
+    if os.path.exists(db_path):
+        return True
+
+    tmp_path = f"{db_path}.tmp"
+    try:
+        with urllib.request.urlopen(download_url, timeout=_DOWNLOAD_TIMEOUT_SECONDS) as response, \
+             open(tmp_path, "wb") as out:
+            shutil.copyfileobj(response, out)
+        os.replace(tmp_path, db_path)
+        return True
+    except Exception as e:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        st.error(f"Could not download database: {e}")
+        return False
 
 @st.cache_data(show_spinner="Preparing data for download...")
 def generate_tsv(_conn, root_taxid, target_rank, _fetch_func):

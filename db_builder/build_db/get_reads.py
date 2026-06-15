@@ -4,10 +4,15 @@ Separates runs into long-read (ONT/PacBio) and short-read taxa.
 """
 
 import json
+import os
+import sys
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-EUKARYOTE_TXID = 2759
+# Allow direct `python db_builder/build_db/get_reads.py` invocation
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from src.constants import EUKARYOTE_TXID
+
 ENA_BASE = "https://www.ebi.ac.uk/ena/portal/api/search"
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=60))

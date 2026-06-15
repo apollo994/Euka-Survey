@@ -1,16 +1,23 @@
 import sqlite3
-from pathlib import Path
-from collections import defaultdict
-from ete3 import NCBITaxa
 import time
+from collections import defaultdict
+from contextlib import closing
+from pathlib import Path
+
+from ete3 import NCBITaxa
+
 
 def precompute_clades(db_path: Path):
     """
-    Reads the leaf-level 'taxid_features' table, calculates the aggregations 
+    Reads the leaf-level 'taxid_features' table, calculates the aggregations
     for every ancestral clade, and creates a fast precomputed table.
     """
     print(f"Connecting to database: {db_path}")
-    conn = sqlite3.connect(db_path)
+    with closing(sqlite3.connect(db_path)) as conn:
+        _precompute_clades_impl(conn)
+
+
+def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
     ncbi = NCBITaxa()
 
     # Get all leaf features
@@ -114,7 +121,6 @@ def precompute_clades(db_path: Path):
     """, insert_rows)
 
     conn.commit()
-    conn.close()
     print("Done! Database is now optimized for the web.")
 
 if __name__ == "__main__":
