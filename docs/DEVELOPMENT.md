@@ -8,16 +8,35 @@ For architectural background, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Environment
 
+The project uses [uv](https://docs.astral.sh/uv/) for Python
+dependency management. Install uv once
+(`curl -LsSf https://astral.sh/uv/install.sh | sh`), then:
+
 ```bash
-conda env create -f environment.yml
-conda activate euka_refactored
+uv sync                          # main deps only (web-app shape)
+uv sync --extra pipeline         # + tenacity for db_builder/
+uv sync --extra pipeline --group dev   # + pytest for tests
 ```
 
-The conda env is **required** (not just preferred) because:
+`uv sync` creates `.venv/`, installs from `uv.lock` (deterministic
+versions), and pins the Python version from `.python-version`.
 
-- ETE3 + PyQt5 need C extensions that are flaky to install from pip.
-- The pipeline shells out to the `datasets` CLI, distributed via
-  `ncbi-datasets-cli` on conda-forge.
+Run commands inside the env without activating it:
+
+```bash
+uv run streamlit run app.py
+uv run pytest
+uv run python db_builder/pipeline_build_db.py
+```
+
+### Why we don't use conda anymore
+
+The conda env (now deleted) existed because PyQt5 wheels used to be
+unreliable on PyPI. They've been solid since ~2021 — `pyqt5==5.15.11`
+installs cleanly via uv/pip on Linux/macOS/Windows x86_64. The other
+historical conda-only dep, `ncbi-datasets-cli`, is a standalone binary
+that's downloaded with `curl` in the GitHub Actions workflow (see
+[PIPELINE.md](PIPELINE.md)).
 
 ### Why `numpy<2.0` is pinned
 
@@ -26,19 +45,26 @@ the NumPy 1.x ABI. With NumPy 2.0 you get `ImportError`s deep inside
 ete3's drawing code. If you need to bump it, plan to bump ete3 and
 matplotlib in the same PR.
 
-### Why `xvfb` is in `packages.txt`
+### What's in `packages.txt`
 
-Streamlit Community Cloud runs in a container without a display server.
-`pyvirtualdisplay` + `xvfb` give the ETE3 render subprocess a
-fake X server so PyQt5 can render. See [ARCHITECTURE.md § Why tree
-rendering happens in a subprocess](ARCHITECTURE.md#why-tree-rendering-happens-in-a-subprocess).
+Streamlit Cloud reads this for apt packages. We declare the minimal
+Qt5 system libraries the PyQt5 wheel links against:
+
+- `libdbus-1-3` — Qt5 dbus integration
+- `libfontconfig1` — font lookup for SVG rendering
+- `libxkbcommon-x11-0` — Qt5 keyboard library (linked even when we use
+  the offscreen plugin)
+
+No `xvfb` — tree rendering uses Qt5's built-in `offscreen` platform
+plugin (`QT_QPA_PLATFORM=offscreen`) instead of a virtual X server.
+See [ARCHITECTURE.md § Why tree rendering happens in a subprocess](ARCHITECTURE.md#why-tree-rendering-happens-in-a-subprocess).
 
 ---
 
 ## Running locally
 
 ```bash
-streamlit run app.py
+uv run streamlit run app.py
 ```
 
 On first launch the app downloads `eukaryotes.db` (~300 MB) from the
@@ -52,7 +78,7 @@ file:
 
 ```bash
 rm eukaryotes.db
-streamlit run app.py
+uv run streamlit run app.py
 ```
 
 (The download is now atomic — it writes to `eukaryotes.db.tmp` and
@@ -112,23 +138,15 @@ the audit.
 ### Running the test suite
 
 ```bash
-conda activate euka_refactored
-pytest                 # default: 63 tests, ~1 second
-pytest -v              # verbose: shows each test name + outcome
-pytest -m network      # also run the network smoke tests against ENA
-pytest tests/test_database.py    # run a single file
-pytest -k filter_sort  # run by name pattern
+uv run pytest                 # default: 63 tests, ~1 second
+uv run pytest -v              # verbose: shows each test name + outcome
+uv run pytest -m network      # also run the network smoke tests against ENA
+uv run pytest tests/test_database.py    # run a single file
+uv run pytest -k filter_sort  # run by name pattern
 ```
 
-If `pytest` is missing (you're on an older conda env that pre-dates the
-addition), install it into the active env:
-
-```bash
-pip install pytest
-```
-
-It's already declared in `environment.yml`, so fresh envs get it
-automatically.
+`pytest` is declared in `pyproject.toml`'s `dev` dependency group, so
+`uv sync` installs it automatically.
 
 ### What's covered
 

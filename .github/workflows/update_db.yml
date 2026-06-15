@@ -2,38 +2,45 @@ name: Monthly Database Build
 
 on:
   schedule:
-    - cron: '0 0 1 * *' # Runs at 00:00 on the 1st of every month automatically
-  workflow_dispatch: # Allows you to manually trigger it by clicking a button in the Actions tab
+    - cron: '0 0 1 * *' # 00:00 on the 1st of every month
+  workflow_dispatch:    # Also runnable manually from the Actions tab
 
 jobs:
   build-and-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Required to allow the workflow to create a Release
-
-    defaults:
-      run:
-        shell: bash -el {0} # Required for conda activates to work
+      contents: write   # Required so the workflow can publish a Release
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Conda environment
-        uses: conda-incubator/setup-miniconda@v3
+      - name: Install ncbi-datasets-cli
+        # Standalone binary from NCBI — much faster than `conda install`
+        # and we use only the `datasets summary genome taxon` subcommand.
+        run: |
+          curl -sSL -o /usr/local/bin/datasets \
+            https://ftp.ncbi.nlm.nih.gov/pub/datasets/command-line/v2/linux-amd64/datasets
+          chmod +x /usr/local/bin/datasets
+          datasets --version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
         with:
-          activate-environment: euka_refactored
-          environment-file: environment.yml
-          auto-activate-base: false
-          miniconda-version: "latest"
+          enable-cache: true
+
+      - name: Install Python dependencies
+        # `--extra pipeline` pulls in tenacity (and any future pipeline-only
+        # deps); the dev group is not needed for the build.
+        run: uv sync --extra pipeline --no-default-groups
 
       - name: Build Database Pipeline
+        # Pipeline now bakes precompute_taxa internally and writes
+        # atomically to *.db.partial → *.db on success (Phase 2 Batch 5).
         run: |
-          # The pipeline now does all 7 steps including precompute_taxa,
-          # and writes atomically to *.db.partial → *.db on success.
-          python db_builder/pipeline_build_db.py
+          uv run python db_builder/pipeline_build_db.py
 
-          # The pipeline drops a dated file like eukaryote_taxid_features_2026_05_11.db
+          # The pipeline drops a dated file like eukaryote_taxid_features_YYYY_MM_DD.db.
           # Require exactly one match to catch leftover artifacts from a prior failed run.
           shopt -s nullglob
           built=( eukaryote_taxid_features_*.db )
@@ -45,15 +52,11 @@ jobs:
 
       - name: Smoke-test produced DB
         run: |
-          python - <<'PY'
-          import os
-          import sqlite3
-          import sys
-
+          uv run python - <<'PY'
+          import os, sqlite3, sys
           db = "eukaryotes.db"
           size_bytes = os.path.getsize(db)
-          # The full DB is ~300 MB; anything under 50 MB suggests a truncated build.
-          MIN_BYTES = 50 * 1024 * 1024
+          MIN_BYTES = 50 * 1024 * 1024   # full DB is ~300 MB
           if size_bytes < MIN_BYTES:
               print(f"FAIL: {db} is only {size_bytes} bytes (< {MIN_BYTES})", file=sys.stderr)
               sys.exit(1)

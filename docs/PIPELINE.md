@@ -73,10 +73,16 @@ for the column-by-column reference.
 ## Running the pipeline locally
 
 ```bash
-conda activate euka_refactored
+# Install pipeline-specific Python deps (one-time)
+uv sync --extra pipeline
+
+# Install the NCBI datasets CLI (standalone binary)
+curl -sSL -o ~/.local/bin/datasets \
+  https://ftp.ncbi.nlm.nih.gov/pub/datasets/command-line/v2/linux-amd64/datasets
+chmod +x ~/.local/bin/datasets   # ensure ~/.local/bin is in PATH
 
 # All 7 steps including precompute_taxa. Produces a dated DB in CWD.
-python db_builder/pipeline_build_db.py
+uv run python db_builder/pipeline_build_db.py
 
 # Rename to the static filename the app expects
 mv eukaryote_taxid_features_*.db eukaryotes.db
@@ -87,8 +93,8 @@ DB (useful after schema tweaks in `precompute_taxa.py` /
 `precompute_aggregations.py`):
 
 ```bash
-python db_builder/precompute_aggregations.py --db eukaryotes.db
-python db_builder/precompute_taxa.py --db eukaryotes.db
+uv run python db_builder/precompute_aggregations.py --db eukaryotes.db
+uv run python db_builder/precompute_taxa.py --db eukaryotes.db
 ```
 
 The full run takes ~30–60 minutes depending on network latency to NCBI
@@ -115,14 +121,14 @@ the script.
 
 ### Environment requirements
 
-Beyond the standard `environment.yml`:
+Beyond the standard `uv sync --extra pipeline`:
 
-- **`datasets` CLI** (`ncbi-datasets-cli` conda package). The pipeline
-  shells out to `datasets summary genome taxon ...`.
+- **`datasets` CLI** — standalone binary from NCBI (curl recipe above).
+  The pipeline shells out to `datasets summary genome taxon ...`.
 - **Outbound network access** to NCBI, Annotrieve, and ENA.
 - **Local ETE3 taxonomy DB** (`~/.etetoolkit/taxa.sqlite`). ETE3
   downloads this automatically on first use; you can also force a
-  refresh with `python -c "from ete3 import NCBITaxa; NCBITaxa().update_taxonomy_database()"`.
+  refresh with `uv run python -c "from ete3 import NCBITaxa; NCBITaxa().update_taxonomy_database()"`.
 
 ---
 
@@ -134,17 +140,17 @@ month and on manual `workflow_dispatch`.
 Steps:
 
 1. Checkout
-2. Set up conda env via `conda-incubator/setup-miniconda@v3`
-3. Run `pipeline_build_db.py`
-4. Verify exactly one dated DB was produced (catches leftover
-   artifacts from prior failed runs)
-5. Run `precompute_taxa.py`
-6. **Smoke-test** the produced DB:
-   - File size ≥ 50 MB (full DB is ~300 MB)
-   - Each of the three tables has at least a sane minimum row count
-   - Workflow fails before publish if any check fails
-7. Publish to GitHub Release tag `latest` via
-   `softprops/action-gh-release@v2`
+2. Install `ncbi-datasets-cli` via `curl` (standalone binary, ~40 s)
+3. Set up uv via `astral-sh/setup-uv@v6` (with cache)
+4. `uv sync --extra pipeline --no-default-groups` installs the Python
+   deps from `uv.lock` (~10 s with cache hit)
+5. `uv run python db_builder/pipeline_build_db.py` — runs all 7 pipeline
+   steps including `precompute_taxa`, with atomic `*.db.partial` →
+   `*.db` rename on success
+6. Verify exactly one dated DB was produced
+7. **Smoke-test** the produced DB (size + per-table row counts; fails
+   before publish if any check fails)
+8. Publish to GitHub Release tag `latest`
 
 The web app's first-launch download targets that `latest` release.
 

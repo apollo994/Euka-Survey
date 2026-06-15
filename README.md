@@ -45,23 +45,26 @@ The data is precomputed monthly into a SQLite database
 git clone https://github.com/Cobos-Bioinfo/Euka-Survey.git
 cd Euka-Survey
 
-# Conda is required — ete3/PyQt5 don't reliably install from pip alone.
-conda env create -f environment.yml
-conda activate euka_refactored
-
-streamlit run app.py
+# uv handles Python + deps. Install once: https://docs.astral.sh/uv/
+uv sync                       # creates .venv and installs the app deps
+uv run streamlit run app.py
 ```
 
 The app will open in your browser. On first launch it downloads
 `eukaryotes.db` (~300 MB) from the latest GitHub Release. Subsequent
 launches use the cached copy.
 
+`uv` reads `pyproject.toml` + `uv.lock` for a reproducible environment.
+The dev tools (pytest) are pulled in automatically; pipeline-only deps
+are opt-in via `uv sync --extra pipeline`.
+
 ## Cloud deployment
 
 The repo is configured for one-click Streamlit Community Cloud
-deployment. The `environment.yml` and `packages.txt` files tell
-Streamlit Cloud how to provision the conda environment plus the system
-packages (`xvfb`, etc.) required for headless tree rendering.
+deployment. Streamlit Cloud detects `uv.lock` (highest priority among
+supported dependency formats) and installs the Python deps via uv;
+`packages.txt` declares the minimal Qt5 system libraries needed for
+headless tree rendering.
 
 ---
 

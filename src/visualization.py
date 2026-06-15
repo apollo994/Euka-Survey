@@ -270,47 +270,31 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     callbacks on worker threads, so this is invoked via
     `multiprocessing.get_context('spawn').Process(...)` (see
     `app.py::generate_tree_svg_cached`).
+
+    Uses Qt5's built-in `offscreen` platform plugin so we don't need an
+    X server (Xvfb / pyvirtualdisplay) anywhere — Streamlit Cloud, CI,
+    or local. The plugin is part of the PyQt5 wheel; no extra apt
+    packages are required beyond the Qt5 system libs declared in
+    packages.txt.
     """
     import tempfile
 
-    # Headless display for environments without an X server.
-    # Failure modes:
-    #   ImportError      — pyvirtualdisplay not installed (local dev with a
-    #                      real X server attached). Fine.
-    #   FileNotFoundError, OSError — Xvfb binary missing. Fall back to Qt's
-    #                      built-in offscreen platform plugin so ETE3 can
-    #                      still render.
-    display = None
-    try:
-        from pyvirtualdisplay import Display
-        display = Display(visible=False, size=(1200, 1000))
-        display.start()
-    except ImportError:
-        log.debug("pyvirtualdisplay not available; assuming a real display is attached.")
-    except (FileNotFoundError, OSError) as e:
-        log.warning("Could not start pyvirtualdisplay (Xvfb missing?): %s. "
-                    "Falling back to Qt offscreen platform.", e)
-        display = None
-        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-    try:
-        ncbi = NCBITaxa()
+    ncbi = NCBITaxa()
 
-        # Batched lineage lookup (replaces an N+1 ncbi.get_lineage(tid) loop).
-        # get_lineage_translator returns {taxid: [lineage]} only for taxids
-        # present in the local taxonomy DB; missing taxids are silently dropped.
-        candidate_taxids = list(phylum_metadata.keys())
-        lineages = ncbi.get_lineage_translator(candidate_taxids)
-        valid_taxids = [t for t in candidate_taxids if t in lineages]
-        if not valid_taxids:
-            log.warning("No valid taxids in phylum_metadata; nothing to render.")
-            return
+    # Batched lineage lookup (replaces an N+1 ncbi.get_lineage(tid) loop).
+    # get_lineage_translator returns {taxid: [lineage]} only for taxids
+    # present in the local taxonomy DB; missing taxids are silently dropped.
+    candidate_taxids = list(phylum_metadata.keys())
+    lineages = ncbi.get_lineage_translator(candidate_taxids)
+    valid_taxids = [t for t in candidate_taxids if t in lineages]
+    if not valid_taxids:
+        log.warning("No valid taxids in phylum_metadata; nothing to render.")
+        return
 
-        with tempfile.TemporaryDirectory(prefix="euka_bars_") as tmp_dir:
-            layout_fn = create_layout_fn(ncbi, phylum_metadata, include_counts, tmp_dir)
-            ts = configure_tree_style(layout_fn, include_counts, tmp_dir)
-            tree = ncbi.get_topology(valid_taxids)
-            tree.render(out_svg, w=1200, units="px", tree_style=ts)
-    finally:
-        if display is not None:
-            display.stop()
+    with tempfile.TemporaryDirectory(prefix="euka_bars_") as tmp_dir:
+        layout_fn = create_layout_fn(ncbi, phylum_metadata, include_counts, tmp_dir)
+        ts = configure_tree_style(layout_fn, include_counts, tmp_dir)
+        tree = ncbi.get_topology(valid_taxids)
+        tree.render(out_svg, w=1200, units="px", tree_style=ts)
