@@ -7,12 +7,22 @@ into a per-render temporary directory passed down through the helpers
 — there are no module-level path globals or shared `.tmp_bars/`
 directory, so concurrent renders cannot stomp on each other's files.
 
-The matplotlib backend is pinned to Agg at import time so the same
-import works in:
+Two backend pins fire at module import time, BEFORE either the
+matplotlib or ete3-treeview names are touched:
 
-- The headless Qt-render subprocess (the child must not pick a Qt
-  backend or it conflicts with ETE3's QApplication).
-- The Streamlit parent process (which never uses pyplot directly).
+- `matplotlib.use("Agg")` — so the same import works in the headless
+  render subprocess (which must NOT pick a Qt backend or it conflicts
+  with ETE3's QApplication) and in the Streamlit parent process (which
+  never uses pyplot directly).
+- `QT_QPA_PLATFORM=offscreen` — so `from ete3 import ImgFace, ...` below
+  succeeds even when no DISPLAY is set. ete3's __init__ does
+  `try: from .treeview import (..., ImgFace, ...)` wrapped in a bare
+  except; a failed PyQt5 platform-plugin probe silently drops those
+  names from the ete3 top-level namespace, and the import on the next
+  line then raises ImportError. Setting the env var here keeps Streamlit
+  Cloud (no DISPLAY) working. Subprocesses re-import this module on
+  spawn, so the same setting fires there too — no duplicate inside
+  `render_tree_in_process` is needed.
 """
 
 import logging
@@ -23,6 +33,10 @@ import os
 import matplotlib
 
 matplotlib.use("Agg")
+
+# Pin Qt platform BEFORE the ete3 treeview import below — see module
+# docstring for the failure mode this guards.
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import matplotlib.patches as mpatches  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
@@ -290,11 +304,12 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
     X server (Xvfb / pyvirtualdisplay) anywhere — Streamlit Cloud, CI,
     or local. The plugin is part of the PyQt5 wheel; no extra apt
     packages are required beyond the Qt5 system libs declared in
-    packages.txt.
+    packages.txt. The `QT_QPA_PLATFORM=offscreen` env var is pinned at
+    module-import time (see this module's docstring), and a spawn-mode
+    child re-runs the module, so the setting is in place before any Qt
+    code runs here.
     """
     import tempfile
-
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
     ncbi = get_ncbi()
 
