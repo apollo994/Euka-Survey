@@ -54,7 +54,3 @@ build-backend = "hatchling.build"
 # Tells hatchling which packages to bundle if a wheel is ever built;
 # also avoids "no packages found" errors during `uv sync`.
 packages = ["src", "db_builder", "ui"]
-
-[tool.uv]
-# Pin the resolution Python so dev machines + Streamlit Cloud + CI agree.
-required-version = ">=0.5"

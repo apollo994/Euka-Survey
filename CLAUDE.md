@@ -12,7 +12,7 @@ life, backed by a precomputed SQLite database (`eukaryotes.db`).
 
 Dependencies are managed with [uv](https://docs.astral.sh/uv/) via `pyproject.toml` +
 `uv.lock`. Conda and `environment.yml` are gone; `packages.txt` remains only as the Streamlit
-Cloud apt manifest (three Qt runtime libs).
+Cloud apt manifest (the five Qt5 runtime libs ete3/PyQt5 need headless).
 
 ```bash
 uv sync                         # web-app deps from uv.lock
