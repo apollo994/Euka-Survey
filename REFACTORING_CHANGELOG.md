@@ -436,6 +436,41 @@ Top-level pipeline is now structured:
   step now that the pipeline does it. The smoke test added in Batch 2
   already validates the `precomputed_taxa` table.
 
+## 2026-06-15 — Hotfix: revert ENA TSV streaming
+
+### db_builder/build_db/get_reads.py
+
+Batch 5's streaming change (`format=tsv` + `iter_lines()`) produced a
+silent data-loss regression: the user ran the new pipeline manually
+and the resulting DB had ~28 % of the previous RNA-Seq run count and
+~17 % of the long-read count, with species coverage at 43 % / 40 %.
+The drop ratio (runs collapse faster than species) matches a
+"stream truncated partway" pattern — long-tail species that have only
+one or two runs are over-represented in what survived.
+
+Likely root cause: the ENA `format=tsv` endpoint applies an
+undocumented row cap, OR the streaming connection is being severed
+mid-response (TLS read timeout? server-side idle disconnect?) and
+`requests.iter_lines()` treats the truncated response as a clean EOF.
+The `format=json` path uses `r.json()` which reads `r.content` to EOF
+and would raise on incomplete data.
+
+**Action**: reverted to `format=json` + `r.json()`. We accept the
+in-memory cost (~few hundred MB for the current ~8 M-row response) as
+the price of correctness for an offline monthly pipeline. The other
+Batch 2 fixes are preserved (JSON-decode error now re-raises so
+tenacity retries instead of silently returning empty dicts; empty
+response is a hard failure).
+
+**Phase 2 #25 is reopened** until the TSV discrepancy is diagnosed.
+Future investigation:
+- Try `format=json` + `iter_content`-based incremental JSON parsing
+  via `ijson` (true streaming without the TSV cap).
+- Try `format=tsv` with pagination (offset+limit, e.g. 100 k rows
+  per request) instead of `limit=0`.
+- Reproduce the row-count difference outside the pipeline with a
+  side-by-side curl of both endpoints.
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;

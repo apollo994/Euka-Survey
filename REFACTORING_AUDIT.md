@@ -358,7 +358,7 @@ app.py         # thin orchestrator
 22. ✅ Pin matplotlib backend to Agg at start of `render_tree_in_process`.
 23. ✅ Batch lineage lookup in `render_tree_in_process`.
 24. ✅ Chunk `get_lineage_translator` calls in `precompute_aggregations.py` (50k chunks).
-25. ✅ Stream ENA reads via `iter_lines()` (TSV format).
+25. ⏳ Stream ENA reads via `iter_lines()` (TSV format). *(Attempted in Batch 5, reverted — TSV path returned ~28% of rows; format=json restored. Investigation needed.)*
 26. ✅ Per-step try/except in `pipeline_build_db.py`; `.partial` + rename. Call `precompute_taxa.precompute_common_clades` from the pipeline.
 27. ✅ Replace `sys.exit(1)` in `get_assemblies` with `raise RuntimeError(...)`. *(Pulled forward in Batch 2.)*
 28. ⏳ Move all `@st.cache_*` wrappers into `src/cache.py`.

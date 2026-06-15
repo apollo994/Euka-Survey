@@ -17,7 +17,6 @@ from src.constants import EUKARYOTE_TXID
 ENA_BASE = "https://www.ebi.ac.uk/ena/portal/api/search"
 log = logging.getLogger("euka.get_reads")
 
-
 _LONG_READ_PLATFORMS = {"OXFORD_NANOPORE", "PACBIO_SMRT"}
 
 
@@ -25,11 +24,16 @@ _LONG_READ_PLATFORMS = {"OXFORD_NANOPORE", "PACBIO_SMRT"}
 def fetch_ena_reads() -> tuple[dict[int, int], dict[int, int], int]:
     """Query ENA portal API for RNA-seq runs and count by taxon × platform.
 
-    Streams the response line-by-line as TSV. Previously the entire JSON
-    array was loaded into memory via `r.json()`, which is a memory bomb
-    for multi-million-row responses.
-
     Returns (long_reads_txids, short_reads_txids, total_record_count).
+
+    Note on format choice: a streaming `format=tsv` + `iter_lines()` was
+    tried (Batch 5) but produced ~28% of the rows of the JSON path —
+    the TSV endpoint either applies an undocumented row cap or the
+    streaming connection is being severed mid-response. Until that's
+    diagnosed we use `format=json` + `r.json()` (one POST, full payload
+    materialized in memory). For the current ~8 M-row response this is
+    a few hundred MB of RAM, which is acceptable for an offline monthly
+    pipeline.
     """
     payload = {
         "result": "read_run",
@@ -38,7 +42,7 @@ def fetch_ena_reads() -> tuple[dict[int, int], dict[int, int], int]:
             f'(library_source="transcriptomic" OR library_strategy="rna-seq")'
         ),
         "fields": "tax_id,instrument_platform",
-        "format": "tsv",
+        "format": "json",
         "limit": 0,
     }
     r = requests.post(
@@ -46,50 +50,39 @@ def fetch_ena_reads() -> tuple[dict[int, int], dict[int, int], int]:
         data=payload,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=120,
-        stream=True,
     )
     r.raise_for_status()
 
+    try:
+        data = r.json()
+    except requests.exceptions.JSONDecodeError as e:
+        # Re-raise so tenacity retries; previously this silently returned
+        # empty dicts + count=0 which masked transient failures.
+        log.error("Failed to decode JSON from ENA: %s", e)
+        raise
+
+    if not data:
+        # Empty result is a hard failure — ENA should always return rows
+        # for the Eukaryota-rooted RNA-Seq query.
+        log.error("ENA returned no rows.")
+        raise RuntimeError("empty ENA response")
+
     txids_count_long_reads: dict[int, int] = {}
     txids_count_short_reads: dict[int, int] = {}
-    total = 0
-    header: list[str] | None = None
 
-    for raw in r.iter_lines(decode_unicode=True):
-        if not raw:
-            continue
-        fields = raw.split("\t")
-        if header is None:
-            header = fields
-            try:
-                tax_idx = header.index("tax_id")
-                platform_idx = header.index("instrument_platform")
-            except ValueError as e:
-                # ENA returned an unexpected header; bail so tenacity retries.
-                log.error("Unexpected ENA TSV header: %r", header)
-                raise RuntimeError("unexpected ENA TSV header") from e
-            continue
-
-        if len(fields) <= max(tax_idx, platform_idx):
-            continue
+    for record in data:
         try:
-            tax_id = int(fields[tax_idx])
-        except ValueError:
+            tax_id = int(record.get("tax_id"))
+        except (ValueError, TypeError):
             continue
 
-        platform = fields[platform_idx]
+        platform = record.get("instrument_platform", "")
         if platform in _LONG_READ_PLATFORMS:
             txids_count_long_reads[tax_id] = txids_count_long_reads.get(tax_id, 0) + 1
         else:
             txids_count_short_reads[tax_id] = txids_count_short_reads.get(tax_id, 0) + 1
-        total += 1
 
-    if header is None:
-        # No data at all — should not happen for a healthy ENA response.
-        log.error("ENA returned no rows (not even a header).")
-        raise RuntimeError("empty ENA response")
-
-    return txids_count_long_reads, txids_count_short_reads, total
+    return txids_count_long_reads, txids_count_short_reads, len(data)
 
 
 if __name__ == "__main__":
