@@ -526,8 +526,11 @@ the bug, passes on the fix.
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;
   needs a thread-local accessor, not a naive module global. The
   `lru_cache`-on-lookups gives most of the wins safely in the interim.
-- **Phase 2 #25 (ENA streaming)** — reopened after the TSV regression;
-  diagnosis pending.
+- **Phase 2 #25 (ENA streaming)** — investigated and parked. The
+  streaming attempt is reverted; the working `format=json` path is in
+  place. No outstanding bug. Optimization itself won't be retried
+  unless the TSV row-count discrepancy is diagnosed (suspected
+  undocumented server-side cap).
 - **Phase 2 #28 (caches → src/cache.py)** — straightforward but
   depends on the app.py UI split planned in Phase 3, so deferred
   there to avoid churn.

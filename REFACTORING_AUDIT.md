@@ -195,11 +195,11 @@ Source-of-truth for findings; update as items are completed.
 
 **Issues**
 
-1. `limit=0` POST loads entire ENA result into memory. `stream=True` is ineffective with `r.json()`. Memory bomb risk.
-2. JSON decode failure returns empty dicts + `count=0` silently. **Correctness/reliability bug.**
+1. `limit=0` POST loads entire ENA result into memory. *Investigated 2026-06-15: a streaming switch to `format=tsv` + `iter_lines()` returned only ~28% of rows (suspected undocumented server-side cap on TSV streaming). Reverted; `format=json` + `r.json()` retained as the correct-and-working path. Memory cost (a few hundred MB) is acceptable for an offline monthly pipeline.*
+2. ✅ *(2026-06-15)* JSON decode failure returns empty dicts + `count=0` silently — now re-raises so tenacity retries (audit C3).
 3. `int(record.get("tax_id"))` on missing key raises `TypeError` caught by `except`. Explicit check is clearer.
-4. `fetch_ena_reads` wrapper is a no-op around `_ena_search`.
-5. `__main__` block claims "Verification complete" — doesn't verify.
+4. ✅ *(2026-06-15)* `fetch_ena_reads` wrapper is a no-op around `_ena_search` — collapsed.
+5. `__main__` block claims "Verification complete" — doesn't verify. ✅ *(2026-06-15)* rewritten to log counts via `logging`.
 
 ---
 
@@ -358,7 +358,7 @@ app.py         # thin orchestrator
 22. ✅ Pin matplotlib backend to Agg at start of `render_tree_in_process`.
 23. ✅ Batch lineage lookup in `render_tree_in_process`.
 24. ✅ Chunk `get_lineage_translator` calls in `precompute_aggregations.py` (50k chunks).
-25. ⏳ Stream ENA reads via `iter_lines()` (TSV format). *(Attempted in Batch 5, reverted — TSV path returned ~28% of rows; format=json restored. Investigation needed.)*
+25. ⊘ Stream ENA reads via `iter_lines()` (TSV format) — *Investigated and rejected. TSV+iter_lines path silently returned ~28% of rows (likely undocumented server-side TSV row cap or stream truncation). Reverted in commit `0fcb54b`; `format=json` + `r.json()` retained as the correct path. No outstanding bug; the optimization is not in place and is parked unless we diagnose the row-count discrepancy.*
 26. ✅ Per-step try/except in `pipeline_build_db.py`; `.partial` + rename. Call `precompute_taxa.precompute_common_clades` from the pipeline.
 27. ✅ Replace `sys.exit(1)` in `get_assemblies` with `raise RuntimeError(...)`. *(Pulled forward in Batch 2.)*
 28. ⏳ Move all `@st.cache_*` wrappers into `src/cache.py`.
