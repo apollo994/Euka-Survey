@@ -13,7 +13,6 @@ from src import ete_utils
 from src.constants import (
     ALLOWED_RANKS,
     COMMON_CLADES,
-    FULL_RANKS,
     HARD_NODE_CAP,
     RENDER_SUBPROCESS_TIMEOUT_SECONDS,
     STANDARD_BREAKPOINTS,
@@ -186,30 +185,14 @@ def main():
             else:
                 root_taxid = label_to_taxid[choice]
 
-        # Dynamic target rank Breakdown selection based on selected root taxon
+        # Dynamic target rank Breakdown selection based on selected root taxon.
+        # `taxonomy.resolve_valid_ranks` is @lru_cache'd, so this no longer
+        # touches ETE3 on every rerun for the same root_taxid.
         valid_options = list(ALLOWED_RANKS)
         if root_taxid:
             try:
-                # Instantiate a fresh NCBITaxa to avoid Streamlit/SQLite cross-thread connection errors
-                from ete3 import NCBITaxa
-                local_ncbi = NCBITaxa()
-                ranks = local_ncbi.get_rank([root_taxid])
-                root_rank = ranks.get(root_taxid, "no rank")
-                
-                if root_rank not in FULL_RANKS:
-                    # Find effective rank via lineage if 'no rank' or non-canonical
-                    lineage = local_ncbi.get_lineage(root_taxid)
-                    lin_ranks = local_ncbi.get_rank(lineage)
-                    for anc_taxid in reversed(lineage):
-                        r = lin_ranks.get(anc_taxid, "no rank")
-                        if r in FULL_RANKS:
-                            root_rank = r
-                            break
-                            
-                if root_rank in FULL_RANKS:
-                    root_idx = FULL_RANKS.index(root_rank)
-                    valid_options = [r for r in ALLOWED_RANKS if FULL_RANKS.index(r) > root_idx]
-            except ValueError:
+                valid_options = list(taxonomy.resolve_valid_ranks(root_taxid))
+            except taxonomy.UnknownTaxonError:
                 st.error("The selected TaxID could not be found. Please enter a valid TaxID or select from the common clades.")
                 root_taxid = None
 
@@ -373,10 +356,15 @@ def main():
                 "Long-Read RNA": "c_lng"
             }
             selected_filters = st.multiselect("Require data for (leaves node out if it lacks data)", list(filter_options.keys()), placeholder="Select features...")
-            
-            filter_logic = "Match ALL (AND)"
+
+            filter_logic_label = "Match ALL (AND)"
             if len(selected_filters) > 1:
-                filter_logic = st.segmented_control("Condition", ["Match ALL (AND)", "Match ANY (OR)"], default="Match ALL (AND)")
+                filter_logic_label = st.segmented_control("Condition", ["Match ALL (AND)", "Match ANY (OR)"], default="Match ALL (AND)")
+            filter_logic = (
+                database.FilterLogic.AND
+                if filter_logic_label == "Match ALL (AND)"
+                else database.FilterLogic.OR
+            )
             
             st.subheader("Sorting & Limits", anchor=False)
             sort_options = {
@@ -443,34 +431,23 @@ def main():
                 filter_keys = [filter_options[f] for f in selected_filters] if selected_filters else []
                 
                 if is_precomputed:
-                    # Use Pure SQL function to push filtering, sorting, and limiting to the database
+                    # SQL pushes filter/sort/limit down to SQLite.
                     phylum_metadata, total_matches = get_filtered_taxa_metadata_cached(
                         conn, root_taxid, target_rank, exclude_empty, tuple(filter_keys), filter_logic, sort_by_key, top_n
                     )
                 else:
-                    # Fallback pipeline for non-canonical roots (query_taxids loaded via ETE3)
-                    phylum_metadata = get_phylum_metadata_cached(conn, tuple(query_taxids), exclude_empty)
-                    
-                    if filter_keys and phylum_metadata:
-                        filtered_metadata = {}
-                        for taxid, stats in phylum_metadata.items():
-                            if filter_logic == "Match ALL (AND)":
-                                if all(stats.get(k, 0) > 0 for k in filter_keys):
-                                    filtered_metadata[taxid] = stats
-                            else:  # Match ANY (OR)
-                                if any(stats.get(k, 0) > 0 for k in filter_keys):
-                                    filtered_metadata[taxid] = stats
-                        phylum_metadata = filtered_metadata
-                        
-                    total_matches = len(phylum_metadata) if phylum_metadata else 0
-                    
-                    if phylum_metadata:
-                        if sort_by_key.startswith('c_'):
-                            s_key = sort_by_key.replace('c_', 's_')
-                            sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1][s_key]), reverse=True)
-                        else:
-                            sorted_items = sorted(phylum_metadata.items(), key=lambda x: (x[1][sort_by_key], x[1]['c_ass']), reverse=True)
-                        phylum_metadata = dict(sorted_items[:top_n])
+                    # Fallback for non-precomputed roots: fetch unfiltered metadata
+                    # (cache key independent of filter knobs) then apply the same
+                    # filter/sort/limit semantics as the SQL path in pure Python.
+                    raw_metadata = get_phylum_metadata_cached(conn, tuple(query_taxids), exclude_empty=False)
+                    phylum_metadata, total_matches = database.filter_sort_limit_metadata(
+                        raw_metadata,
+                        filter_keys=filter_keys,
+                        filter_logic=filter_logic,
+                        sort_by_key=sort_by_key,
+                        top_n=top_n,
+                        exclude_empty=exclude_empty,
+                    )
                 
                 # Show exclusion statistics
                 nodes_excluded = num_nodes - total_matches

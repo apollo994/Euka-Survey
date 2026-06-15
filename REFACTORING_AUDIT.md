@@ -11,7 +11,7 @@ Source-of-truth for findings; update as items are completed.
 
 | # | Refactor | Impact | Difficulty | Status |
 |---|---|---|---|---|
-| 1 | Eliminate the duplicated filter/sort/limit logic between `app.py` (Python fallback) and `src/database.py::get_filtered_taxa_metadata` (SQL path) by routing both through a single helper that accepts pre-resolved taxids | High — biggest correctness risk in the repo; CLAUDE.md explicitly warns about keeping the paths in sync | Medium | TODO |
+| 1 | Eliminate the duplicated filter/sort/limit logic between `app.py` (Python fallback) and `src/database.py::get_filtered_taxa_metadata` (SQL path) by routing both through a single helper that accepts pre-resolved taxids | High — biggest correctness risk in the repo; CLAUDE.md explicitly warns about keeping the paths in sync | Medium | **DONE** (2026-06-15) — parity verified |
 | 2 | Extract a single `NCBITaxa` module-level singleton/accessor (with thread-safe lazy init) and reuse it across `src/taxonomy.py`, `src/ete_utils.py`, `src/visualization.py`, `app.py`, and `db_builder/` | High — currently 5+ instantiations per Streamlit rerun, opens many SQLite handles, slows hot path | Low | TODO |
 | 3 | Split `app.py` (530 lines) into `ui/sidebar.py`, `ui/query_config.py`, `ui/summary.py`, `ui/tree.py`, `ui/export.py` + a thin `app.py` controller | High — current file is the biggest maintainability liability | Medium | TODO |
 | 4 | De-duplicate the `phylum_metadata` row→dict construction in `database.py` (identical in `build_phylum_metadata` and `get_filtered_taxa_metadata`) | Medium | Low | TODO |
@@ -290,7 +290,7 @@ app.py         # thin orchestrator
 ## Technical Debt Ranking
 
 ### Critical
-- **C1.** Duplicated filter/sort/limit logic in `app.py` vs `database.py`. [`app.py:432-462`, `src/database.py:88-147`]
+- **C1.** ✅ *(2026-06-15)* Duplicated filter/sort/limit logic in `app.py` vs `database.py` — unified via `FilterLogic` enum + `filter_sort_limit_metadata` helper; parity verified.
 - **C2.** ✅ *(2026-06-15)* `app.py::generate_tree_svg_cached` calls `p.join()` without timeout. [`app.py:84`]
 - **C3.** ✅ *(2026-06-15)* `get_reads.py::_ena_search` swallows JSON decode errors → degenerate DB. [`get_reads.py:32-36`]
 - **C4.** `precompute_aggregations.py` silently under-counts ancestors when lineage lookups fail. [`precompute_aggregations.py:64-66`]
@@ -298,7 +298,7 @@ app.py         # thin orchestrator
 ### High
 - **H1.** ✅ *(2026-06-15)* No atomic write in `utils.ensure_database`. [`utils.py:8-16`]
 - **H2.** Race in `.tmp_bars` between concurrent users on Cloud. [`visualization.py:29-32`, `:60`]
-- **H3.** `app.py` rank-resolution runs ETE3 on every rerun. [`app.py:178-202`]
+- **H3.** ✅ *(2026-06-15)* `app.py` rank-resolution runs ETE3 on every rerun — moved to `taxonomy.resolve_valid_ranks` with `@lru_cache`.
 - **H4.** ⚠️ *Partial (2026-06-15)* — lookup `lru_cache` in place; full singleton blocked by Streamlit thread-affinity.
 - **H5.** Pipeline lacks per-step error handling and atomic output.
 - **H6.** ✅ *(2026-06-15)* Workflow has no DB-validation gate before publishing.
@@ -310,7 +310,7 @@ app.py         # thin orchestrator
 - **M3.** Dict-of-dicts metadata stringly-typed.
 - **M4.** Magic numbers scattered.
 - **M5.** ✅ *(2026-06-15)* Common-taxa list duplicated.
-- **M6.** `get_taxa_at_rank` slow for large clades.
+- **M6.** ⊘ *(2026-06-15)* `get_taxa_at_rank` slow for large clades — investigated, rejected: CTE rewrite is slower (no parent index in ETE3 SQLite); original retained with explanatory comment.
 - **M7.** `precompute_aggregations` loads 1.8M lineages in one call.
 - **M8.** ✅ *(2026-06-15)* `get_assemblies` uses `sys.exit(1)` instead of raising.
 - **M9.** `pyvirtualdisplay` ImportError silently swallowed.
@@ -348,20 +348,20 @@ app.py         # thin orchestrator
 
 ### Phase 2 — Medium-effort improvements
 
-15. Extract `_row_to_metadata` helper in `database.py`; reuse in both functions.
-16. Replace `"Match ALL (AND)"` string compare with `FilterLogic` enum in `app.py` and `database.py`.
-17. Move filter/sort/limit into single pure helper `filter_sort_limit(metadata, ...) -> (dict, int)`. Both paths feed it.
-18. Single `NCBITaxa` accessor in `src/ete_utils.py`; replace all `NCBITaxa()` calls.
-19. Pull rank-resolution out of `app.py` into `taxonomy.resolve_valid_ranks(root_taxid)`.
-20. Reimplement `get_taxa_at_rank` using the recursive-CTE pattern from `ete_utils`.
-21. Use `tempfile.TemporaryDirectory()` per render in `visualization.render_tree_in_process`; drop globals.
-22. Pin matplotlib backend to Agg at start of `render_tree_in_process`.
-23. Batch lineage lookup in `render_tree_in_process`.
-24. Chunk `get_lineage_translator` calls in `precompute_aggregations.py` (50k chunks).
-25. Stream ENA reads via `iter_lines()` or paginate.
-26. Per-step try/except in `pipeline_build_db.py`; `.partial` + rename. Call `precompute_taxa.precompute_common_clades` from the pipeline.
-27. Replace `sys.exit(1)` in `get_assemblies` with `raise RuntimeError(...)`.
-28. Move all `@st.cache_*` wrappers into `src/cache.py`.
+15. ✅ Extract `_row_to_metadata` helper in `database.py`; reuse in both functions.
+16. ✅ Replace `"Match ALL (AND)"` string compare with `FilterLogic` enum in `app.py` and `database.py`.
+17. ✅ Move filter/sort/limit into single pure helper `filter_sort_limit_metadata(metadata, ...) -> (dict, int)`. Both paths feed it.
+18. ⏳ Single `NCBITaxa` accessor in `src/ete_utils.py`; replace all `NCBITaxa()` calls. *(Blocked by Streamlit thread-affinity; needs thread-local accessor.)*
+19. ✅ Pull rank-resolution out of `app.py` into `taxonomy.resolve_valid_ranks(root_taxid)`.
+20. ⊘ Reimplement `get_taxa_at_rank` using the recursive-CTE pattern from `ete_utils`. *(Investigated and rejected: CTE is slower because ETE3 SQLite has no parent index.)*
+21. ⏳ Use `tempfile.TemporaryDirectory()` per render in `visualization.render_tree_in_process`; drop globals.
+22. ⏳ Pin matplotlib backend to Agg at start of `render_tree_in_process`.
+23. ⏳ Batch lineage lookup in `render_tree_in_process`.
+24. ⏳ Chunk `get_lineage_translator` calls in `precompute_aggregations.py` (50k chunks).
+25. ⏳ Stream ENA reads via `iter_lines()` or paginate.
+26. ⏳ Per-step try/except in `pipeline_build_db.py`; `.partial` + rename. Call `precompute_taxa.precompute_common_clades` from the pipeline.
+27. ✅ Replace `sys.exit(1)` in `get_assemblies` with `raise RuntimeError(...)`. *(Pulled forward in Batch 2.)*
+28. ⏳ Move all `@st.cache_*` wrappers into `src/cache.py`.
 
 ### Phase 3 — Large architectural improvements
 

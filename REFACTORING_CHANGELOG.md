@@ -207,6 +207,88 @@ change (if any), and why.
   non-int input. The only caller (`app.py`) already treats `"Unknown"` as the
   error sentinel.
 
+## 2026-06-15 — Batch 3: Phase 2 — filter/sort/limit unification + rank-resolution caching
+
+### src/database.py
+
+**Audit C1 / Roadmap Phase 2 #15 + #16 + #17 — Filter/sort/limit unified**
+
+The single highest-priority refactor in the audit. CLAUDE.md explicitly
+warned about keeping the SQL path (`database.get_filtered_taxa_metadata`)
+and the Python fallback path (inline in `app.py`) in sync. They are no
+longer separate code:
+
+- New `FilterLogic` enum (`AND` / `OR`) replaces the bare string compare
+  `"Match ALL (AND)"` that was leaking through three layers (UI label →
+  `@st.cache_data` key → SQL WHERE-clause builder). The UI now converts
+  the segmented-control label to a `FilterLogic` value once, at the
+  boundary; the data layer never sees the string.
+- New `_row_to_metadata(row)` helper consumes the 10-column row from
+  `precomputed_clade_features` and produces the standard metadata
+  dict (`n_rows`, `c_*`, `s_*`, `p_*`). Used by both
+  `build_phylum_metadata` and `get_filtered_taxa_metadata` — no more
+  copy-pasted column unpacking and percentage math.
+- New `_secondary_sort_key(sort_by_key)` returns the tiebreaker column,
+  used identically in the SQL `ORDER BY` and in the Python `sorted`
+  key. (Sorting by a `c_*` metric ties by the matching `s_*`; otherwise
+  ties by `c_ass`.)
+- New `filter_sort_limit_metadata(metadata, *, …) -> (dict, int)` is
+  the canonical Python implementation of `exclude_empty` →
+  `filter_keys`/`filter_logic` → `sort` → `limit`. The non-precomputed
+  fallback in `app.py` now calls this single function instead of
+  carrying its own copy of the logic.
+- Magic `chunk_size = 900` → `_IN_CHUNK = SQLITE_MAX_VARIABLES - 99`
+  (named constant; defined in `src/constants.py`).
+- The `_COVERAGE_KEYS` tuple (`c_ass, c_ann, c_rna, c_lng`) is the
+  single source of truth for the "exclude empty" predicate — used by
+  both the SQL `WHERE` builder and the Python helper.
+
+**Parity verified** against the real `eukaryotes.db` across five
+scenarios (no filter, exclude_empty, AND-filter, OR-filter,
+sort-by-`c_*`/`s_*`/`n_*`); SQL and Python paths produce identical
+totals, key sets, ordering, and metadata values.
+
+### app.py
+
+**Reuses the unified data layer**
+
+- UI segmented-control label converted to `FilterLogic` enum at the
+  widget boundary.
+- Non-precomputed fallback path now fetches `raw_metadata` with
+  `exclude_empty=False` and pipes it through
+  `database.filter_sort_limit_metadata`. This also means the cached
+  `get_phylum_metadata_cached` result is now independent of filter
+  knobs — toggling `exclude_empty` or changing filter selections
+  reuses the cached fetch instead of busting it.
+
+**Audit H3 — Rank resolution caching**
+
+- The inline ETE3 lineage walk that computed the dropdown's valid ranks
+  on every Streamlit rerun is gone (~25 lines removed from `app.py`).
+- Replaced with `taxonomy.resolve_valid_ranks(root_taxid)` — a small
+  `@lru_cache`'d helper that returns the tuple of `ALLOWED_RANKS`
+  strictly below the root's own rank. Raises `UnknownTaxonError` (not
+  the generic `ValueError`) for unknown taxids, so the UI's
+  `except` clause is now type-safe.
+- Verified on the six common roots + Vertebrata (no-rank fallback to
+  lineage walk) + a species-rank root (empty list — UI shows "no
+  further breakdown") + an unknown taxid.
+- `FULL_RANKS` is no longer imported at the `app.py` level — all rank
+  logic now lives in `src/taxonomy.py`.
+
+### src/taxonomy.py
+
+**Audit M6 — Investigated, rejected**
+
+The audit suggested rewriting `get_taxa_at_rank` using the recursive
+CTE pattern from `ete_utils`. Investigation showed this is **slower**:
+the ETE3 SQLite has no index on `parent`, so the recursion builds an
+automatic covering index per level. Measured 3–30× slowdown depending
+on clade depth. A `track`-column LIKE approach (single full scan,
+~1.5 s) was also slower than ETE3's internal traversal for narrow
+clades. The original implementation has been retained with an
+explanatory comment so the next reader doesn't re-investigate.
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;
