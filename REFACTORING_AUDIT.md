@@ -13,7 +13,7 @@ Source-of-truth for findings; update as items are completed.
 |---|---|---|---|---|
 | 1 | Eliminate the duplicated filter/sort/limit logic between `app.py` (Python fallback) and `src/database.py::get_filtered_taxa_metadata` (SQL path) by routing both through a single helper that accepts pre-resolved taxids | High — biggest correctness risk in the repo; CLAUDE.md explicitly warns about keeping the paths in sync | Medium | **DONE** (2026-06-15) — parity verified |
 | 2 | Extract a single `NCBITaxa` module-level singleton/accessor (with thread-safe lazy init) and reuse it across `src/taxonomy.py`, `src/ete_utils.py`, `src/visualization.py`, `app.py`, and `db_builder/` | High — currently 5+ instantiations per Streamlit rerun, opens many SQLite handles, slows hot path | Low | TODO |
-| 3 | Split `app.py` (530 lines) into `ui/sidebar.py`, `ui/query_config.py`, `ui/summary.py`, `ui/tree.py`, `ui/export.py` + a thin `app.py` controller | High — current file is the biggest maintainability liability | Medium | TODO |
+| 3 | Split `app.py` (530 lines) into `ui/sidebar.py`, `ui/query_config.py`, `ui/summary.py`, `ui/tree.py`, `ui/export.py` + a thin `app.py` controller | High — current file is the biggest maintainability liability | Medium | **DONE** (2026-06-15) — app.py now 57 lines |
 | 4 | De-duplicate the `phylum_metadata` row→dict construction in `database.py` (identical in `build_phylum_metadata` and `get_filtered_taxa_metadata`) | Medium | Low | TODO |
 | 5 | Add a render-subprocess timeout and proper error/cleanup in `app.py::generate_tree_svg_cached` (no `p.join(timeout=...)`, no `try/finally` cleanup, temp files written to CWD instead of `tempfile.NamedTemporaryFile`) | High — current code can hang the app indefinitely on a stuck child process | Low | **DONE** (2026-06-15) |
 | 6 | Move the live ETE3 rank-resolution block (lines 178–202 of `app.py`) into a memoized helper in `src/taxonomy.py` and cache by `root_taxid` | Medium-High — runs on every Streamlit rerun | Low | TODO |
@@ -305,7 +305,7 @@ app.py         # thin orchestrator
 - **H7.** ✅ *(2026-06-15)* No tests at all — pytest suite added (63 tests + 2 network); covers constants, filter/sort/limit, SQL/Python parity (audit C1 regression net), rank resolution, aggregation rollup correctness with explicit C4 regression test (hostile-tested).
 
 ### Medium
-- **M1.** `app.py` 530 lines in one function.
+- **M1.** ✅ *(2026-06-15)* `app.py` 530 lines in one function — now 57 lines (Batch 12).
 - **M2.** Duplicate row→dict construction in `database.py`.
 - **M3.** Dict-of-dicts metadata stringly-typed.
 - **M4.** Magic numbers scattered.
@@ -361,11 +361,11 @@ app.py         # thin orchestrator
 25. ⊘ Stream ENA reads via `iter_lines()` (TSV format) — *Investigated and rejected. TSV+iter_lines path silently returned ~28% of rows (likely undocumented server-side TSV row cap or stream truncation). Reverted in commit `0fcb54b`; `format=json` + `r.json()` retained as the correct path. No outstanding bug; the optimization is not in place and is parked unless we diagnose the row-count discrepancy.*
 26. ✅ Per-step try/except in `pipeline_build_db.py`; `.partial` + rename. Call `precompute_taxa.precompute_common_clades` from the pipeline.
 27. ✅ Replace `sys.exit(1)` in `get_assemblies` with `raise RuntimeError(...)`. *(Pulled forward in Batch 2.)*
-28. ⏳ Move all `@st.cache_*` wrappers into `src/cache.py`.
+28. ✅ *(2026-06-15)* Move all `@st.cache_*` wrappers into `src/cache.py`. *(Batch 12: all 7 wrappers — get_db_ready, get_db_connection, get_taxa_count_cached, fetch_taxa_cached, get_phylum_metadata_cached, get_filtered_taxa_metadata_cached, generate_tree_svg_cached — now live in src/cache.py and are imported from there by app.py + ui/.)*
 
 ### Phase 3 — Large architectural improvements
 
-29. Split `app.py` into `ui/` modules + thin orchestrator.
+29. ✅ *(2026-06-15)* Split `app.py` into `ui/` modules + thin orchestrator. *(Batch 12: app.py now 57 lines — set_page_config + main() that calls the five renderers. Sections live in ui/sidebar.py, ui/query_config.py, ui/summary.py, ui/tree.py, ui/export.py with shared state in ui/state.py::QueryState.)*
 30. Replace dict-of-dicts metadata with `@dataclass(frozen=True, slots=True) CladeMetadata` end-to-end.
 31. ✅ *(2026-06-15)* `Metric` enum + config table for the four resources. *(Batch 11: new `src/metrics.py` with frozen `Metric` dataclass + `METRICS` tuple. Drives `database.py` column groups, `visualization.py` bar/legend/count colors, `app.py` filter/sort dropdowns, and `utils.py` TSV schema. 10 metric-config sanity tests + 3 database-drift guards; full suite 83 passed / 3 skipped.)*
 32. Pipeline as staged state machine (per-step snapshot files; idempotent build).

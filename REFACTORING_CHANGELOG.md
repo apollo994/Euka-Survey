@@ -774,6 +774,88 @@ block. Deferred to Phase 3 #29 (the `app.py` UI split), where the
 summary section becomes its own module and the trade-off is
 cleaner.
 
+## 2026-06-15 — Batch 12: Phase 3 — split app.py + Metric UI fields (#29, #28)
+
+Closes Phase 3 #29 (app.py → ui/ modules), Phase 2 #28 (caches → src/cache.py),
+and audit M1 (530-line god function). `app.py` is now a 57-line controller:
+page config, DB init, five `render_*` calls.
+
+### New top-level `ui/` package
+
+| File | Responsibility |
+|---|---|
+| `ui/__init__.py` | Marker — no re-exports. |
+| `ui/state.py` | `QueryState` (frozen dataclass) with `is_valid_root` + `has_results` properties. Produced by `render_query_config`, consumed by everything else. |
+| `ui/sidebar.py` | `render_sidebar()` — help expander + project link. |
+| `ui/query_config.py` | `render_query_config(conn) -> QueryState` — root taxon selectbox, rank selectbox, tree-size readback. Falls back from `precomputed_taxa` to live ETE3 traversal as before. |
+| `ui/summary.py` | `render_summary(conn, query)` — Total Species metric + a single loop over `METRICS` that renders all four resource cards via a small `_render_metric_card` helper. The 4 hand-written ~20-line render blocks in the old app.py collapse to one. |
+| `ui/tree.py` | `render_tree_section(conn, query)` — filter form, sort + limit, SQL/Python fallback dispatch, subprocess SVG render, download button. |
+| `ui/export.py` | `render_export(conn, query)` — TSV download. |
+
+Each `ui/` module exposes exactly one `render_*` function. None of them
+import from each other (every cross-section state hop goes through
+`QueryState`), so there is no implicit ordering coupling.
+
+### New `src/cache.py` — Phase 2 #28
+
+All 7 Streamlit-cached wrappers moved out of `app.py`:
+
+- `@st.cache_resource`: `get_db_ready`, `get_db_connection`.
+- `@st.cache_data`: `get_taxa_count_cached`, `fetch_taxa_cached`,
+  `get_phylum_metadata_cached`, `get_filtered_taxa_metadata_cached`,
+  `generate_tree_svg_cached`.
+
+Effect: the data layer (`src/database.py`, `src/visualization.py`, etc.)
+has no Streamlit imports anywhere, and cache tuning lives in one file.
+`ui/` modules call `src.cache.*` directly and don't see decorators.
+
+### `src/constants.py`
+
+- `DB_PATH` and `DB_DOWNLOAD_URL` moved here from app.py. They are
+  config, not local app state.
+
+### `src/metrics.py` — UI-field expansion
+
+The Metric dataclass grew from 11 fields to 19, picking up everything
+the four summary cards needed:
+
+| New field | Used for |
+|---|---|
+| `card_title` | Card heading (replaces the now-unused `title`). |
+| `card_color` | Streamlit shorthand color (`blue`/`orange`/`green`). |
+| `card_icon` | Material icon name (`database`/`description`/`segment`/`reorder`). |
+| `card_title_help` | Optional tooltip on the heading — only `lng` has one today. |
+| `species_help` | Help text on the "Species Covered" metric. |
+| `total_label` | Label on the total metric (`"Total Assemblies"` vs `"Total Runs"`). |
+| `total_help` | Help text on the total metric. |
+| `external_source_name` | Card link label (`NCBI` / `Annotrieve` / `ENA`). |
+| `external_url_template` | URL with a `{taxid}` placeholder; substituted via `Metric.external_url(taxid)`. |
+
+This deliberately stretches Metric beyond pure "data shape" into "data
+shape + UI presentation" — the trade-off the prior batch had deferred.
+The win is concrete: the four card render blocks (~80 lines of nearly
+identical structure) collapse into a single `for col, m in
+zip(cols, METRICS): _render_metric_card(...)`.
+
+### `pyproject.toml`
+
+- Added `ui` to `tool.hatch.build.targets.wheel.packages` so the new
+  package is registered.
+
+### Verified end-to-end
+
+- Full pytest suite: **87 passed / 3 skipped** (was 83 / 3 in Batch 11,
+  +4 new card-field tests).
+- `streamlit.testing.v1.AppTest` harness ran `app.py` start-to-finish:
+  all four section headers rendered, four "Species Covered" metrics
+  in the summary, totals row in the correct `["Total Assemblies",
+  "Total Annotations", "Total Runs", "Total Runs"]` order, no
+  exceptions, no `st.error` calls.
+- Outbound card URLs cross-checked against the pre-refactor literals
+  at `root_taxid=2759`: all four byte-identical (NCBI Datasets,
+  Annotrieve, two ENA queries with the long-read filter difference).
+- `app.py`: 517 → 57 lines.
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;
@@ -784,6 +866,5 @@ cleaner.
   place. No outstanding bug. Optimization itself won't be retried
   unless the TSV row-count discrepancy is diagnosed (suspected
   undocumented server-side cap).
-- **Phase 2 #28 (caches → src/cache.py)** — straightforward but
-  depends on the app.py UI split planned in Phase 3, so deferred
-  there to avoid churn.
+- ~~**Phase 2 #28 (caches → src/cache.py)**~~ — closed in Batch 12
+  alongside the app.py UI split (Phase 3 #29).

@@ -5,6 +5,17 @@ previously duplicated across app.py, db_builder/precompute_taxa.py, and the
 db_builder/build_db/* modules.
 """
 
+# Path used by the Streamlit app to locate (and download into) the
+# precomputed DB. Sibling to `eukaryotes.db` on disk; gitignored.
+DB_PATH: str = "eukaryotes.db"
+
+# Where the app fetches `eukaryotes.db` from on first run. Points at
+# the GitHub Release tagged `latest` — see Batch 10 in the changelog
+# for the date-tagged release scheme that keeps this pointer stable.
+DB_DOWNLOAD_URL: str = (
+    "https://github.com/Cobos-Bioinfo/Euka-Survey/releases/latest/download/eukaryotes.db"
+)
+
 EUKARYOTE_TXID: int = 2759
 
 COMMON_CLADES: dict[int, str] = {

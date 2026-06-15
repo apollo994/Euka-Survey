@@ -94,6 +94,48 @@ def test_filter_and_sort_labels_unique():
 
 
 # --------------------------------------------------------------------- #
+# Summary-card UI fields (drive ui/summary.py)
+# --------------------------------------------------------------------- #
+
+
+def test_summary_card_required_fields_populated():
+    """Every metric must carry the strings the card render fn reads."""
+    for m in METRICS:
+        for field in (
+            "card_title", "card_color", "card_icon",
+            "species_help", "total_label", "total_help",
+            "external_source_name", "external_url_template",
+        ):
+            value = getattr(m, field)
+            assert value, f"{m.key}.{field} is empty"
+            assert isinstance(value, str)
+
+
+def test_card_titles_unique():
+    """Two cards with the same title would confuse users."""
+    titles = [m.card_title for m in METRICS]
+    assert len(set(titles)) == len(titles)
+
+
+def test_external_url_template_substitutes_taxid():
+    """Each template must accept a {taxid} placeholder and produce a
+    valid-looking https URL when formatted."""
+    for m in METRICS:
+        url = m.external_url(42)
+        assert "42" in url
+        assert "{taxid}" not in url
+        assert url.startswith("https://")
+
+
+def test_only_lng_has_card_title_help_today():
+    """If a second metric gains a title tooltip we want to know about it
+    (it's currently the only field with a default, and the summary
+    renderer treats `None` as 'no help')."""
+    with_help = [m for m in METRICS if m.card_title_help is not None]
+    assert {m.key for m in with_help} == {"lng"}
+
+
+# --------------------------------------------------------------------- #
 # database.py reads from METRICS — these tests guard against drift
 # between the config and the SQL layer that consumes it.
 # --------------------------------------------------------------------- #
