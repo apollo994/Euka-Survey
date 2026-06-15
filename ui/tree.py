@@ -169,7 +169,7 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
         try:
             with open(tmp_svg, "wb") as f:
                 f.write(svg_bytes)
-            st.image(tmp_svg, use_container_width=True)
+            st.image(tmp_svg, width="stretch")
         finally:
             if os.path.exists(tmp_svg):
                 os.remove(tmp_svg)
