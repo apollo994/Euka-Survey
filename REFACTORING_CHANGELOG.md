@@ -605,6 +605,27 @@ for apt. No further configuration on the Cloud side.
 | `docs/DEVELOPMENT.md` | Env section rewritten |
 | `docs/PIPELINE.md` | Local-run + workflow steps updated |
 
+## 2026-06-15 — Batch 8: drop sys.path.insert hacks
+
+Phase 3 #33 follow-through. Batch 7's `pyproject.toml` made `src.*`
+and `db_builder.*` first-class importable packages via `uv sync`'s
+editable install. The five remaining `sys.path.insert(...)` hacks
+were leftover from the pre-package era and are now obsolete.
+
+Removed from:
+- `db_builder/pipeline_build_db.py`
+- `db_builder/precompute_taxa.py`
+- `db_builder/build_db/get_assemblies.py`
+- `db_builder/build_db/get_reads.py`
+- `tests/conftest.py`
+
+Also dropped now-unused `import sys` / `import os` from files where
+they were only there to support the hack.
+
+Verified imports work from any CWD (e.g. running
+`python -c "import db_builder.pipeline_build_db"` from `/tmp`).
+Full test suite still passes: 63 passed, 2 skipped.
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;

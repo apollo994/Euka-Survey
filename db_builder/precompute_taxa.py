@@ -1,12 +1,8 @@
 import logging
-import os
 import sqlite3
-import sys
 from contextlib import closing
 from pathlib import Path
 
-# Add parent directory to sys.path to import from src
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src import taxonomy
 from src.constants import ALLOWED_RANKS, COMMON_CLADES
 

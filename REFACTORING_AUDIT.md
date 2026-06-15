@@ -369,7 +369,7 @@ app.py         # thin orchestrator
 30. Replace dict-of-dicts metadata with `@dataclass(frozen=True, slots=True) CladeMetadata` end-to-end.
 31. `Metric` enum + config table for the four resources.
 32. Pipeline as staged state machine (per-step snapshot files; idempotent build).
-33. Add `pyproject.toml`; drop `sys.path.insert` hacks; `python -m euka_survey.pipeline`.
+33. ✅ Add `pyproject.toml`; drop `sys.path.insert` hacks. *(Batch 7 added pyproject.toml; Batch 8 removed the 5 sys.path hacks across db_builder/ and tests/conftest.py.)*
 34. ✅ `tests/` with fixture SQLite + parity test (SQL path vs Python path produce identical results) — done as Batch 6.
 35. `PRAGMA user_version` schema versioning.
 36. Long-lived Qt render worker (retire spawn-per-render).

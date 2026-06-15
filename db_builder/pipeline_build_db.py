@@ -25,9 +25,6 @@ import sys
 import time
 from pathlib import Path
 
-# Add project root to path so we can import src and db_builder modules
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from src.constants import EUKARYOTE_TXID
 from src.ete_utils import get_all_descendant_taxids
 from db_builder.build_db.get_assemblies import get_assemblies

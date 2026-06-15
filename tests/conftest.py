@@ -11,14 +11,9 @@ the internet use `network`. Both are skipped by default — opt in with
 
 from __future__ import annotations
 
-import os
 import sqlite3
-import sys
 
 import pytest
-
-# Make `from src import …` work from anywhere under tests/.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
 # --------------------------------------------------------------------- #

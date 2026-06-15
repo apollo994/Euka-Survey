@@ -5,12 +5,8 @@ Uses the NCBI datasets CLI to identify which taxa have sequenced genome assembli
 
 import json
 import logging
-import os
 import subprocess
-import sys
 
-# Allow direct `python db_builder/build_db/get_assemblies.py` invocation
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from src.constants import EUKARYOTE_TXID
 
 log = logging.getLogger("euka.get_assemblies")
