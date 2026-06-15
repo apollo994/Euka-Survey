@@ -150,7 +150,10 @@ Steps:
 6. Verify exactly one dated DB was produced
 7. **Smoke-test** the produced DB (size + per-table row counts; fails
    before publish if any check fails)
-8. Publish to GitHub Release tag `latest`
+8. Publish to GitHub Release with a date-based tag (`db-YYYY.MM.DD.HHMM`)
+   and `make_latest: true`. Past builds keep their dated tags for
+   rollback; the app's `/releases/latest/download/eukaryotes.db` URL
+   keeps resolving to the most recent build.
 
 The web app's first-launch download targets that `latest` release.
 

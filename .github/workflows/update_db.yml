@@ -79,11 +79,26 @@ jobs:
           print("Smoke test passed.")
           PY
 
+      - name: Compute release tag
+        run: |
+          # Date + hour/minute so manual reruns on the same day don't collide.
+          # `date -u` keeps the workflow's clock consistent across runners.
+          BUILD_DATE=$(date -u +%Y.%m.%d.%H%M)
+          echo "BUILD_DATE=${BUILD_DATE}" >> "$GITHUB_ENV"
+
       - name: Publish to GitHub Release
+        # tag_name is date-based so past releases stay around for rollback;
+        # make_latest: true keeps the app's /releases/latest/download/ URL
+        # pointing at this build. The previous `tag_name: latest` was
+        # overwrite-only and offered no rollback path.
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest
-          name: "Latest Database Update"
-          body: "Automated database build."
+          tag_name: "db-${{ env.BUILD_DATE }}"
+          name: "Database build ${{ env.BUILD_DATE }}"
+          body: |
+            Automated monthly database build on ${{ env.BUILD_DATE }} UTC.
+
+            Sources: NCBI (assemblies), Annotrieve (annotations),
+            ENA (RNA-Seq runs split by platform).
           files: eukaryotes.db
           make_latest: true

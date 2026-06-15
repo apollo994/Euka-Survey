@@ -373,4 +373,4 @@ app.py         # thin orchestrator
 34. ✅ `tests/` with fixture SQLite + parity test (SQL path vs Python path produce identical results) — done as Batch 6.
 35. ✅ `PRAGMA user_version` schema versioning. *(Batch 9: pipeline stamps version on every build; app validates on startup via `_check_schema_version`; legacy unstamped DBs accepted as compatible with v1 so existing users aren't broken; 7 new tests including stamper/reader drift guard.)*
 36. Long-lived Qt render worker (retire spawn-per-render).
-37. Versioned releases + `latest` pointer supporting rollback.
+37. ✅ Versioned releases + `latest` pointer supporting rollback. *(Batch 10: workflow now tags each release `db-YYYY.MM.DD.HHMM` with `make_latest: true`. Past releases kept for rollback; app's `/releases/latest/download/` URL keeps working.)*

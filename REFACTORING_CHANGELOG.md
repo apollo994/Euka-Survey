@@ -676,6 +676,30 @@ current DB:
 
 No forced rebuild required.
 
+## 2026-06-15 — Batch 10: versioned releases (Phase 3 #37)
+
+The workflow previously published every monthly build to a single
+`tag_name: latest` tag, overwriting whatever was there. A bad release
+clobbered the previous good one — no rollback path.
+
+### Change
+
+- Compute `BUILD_DATE=$(date -u +%Y.%m.%d.%H%M)` in a new step.
+- Publish step uses `tag_name: "db-${{ env.BUILD_DATE }}"` so each
+  build has a unique, sortable, human-readable tag.
+- `make_latest: true` still tells GitHub which release is "the latest",
+  so the app's `releases/latest/download/eukaryotes.db` URL keeps
+  resolving correctly.
+- Release body now records the build timestamp and the data sources.
+
+### Effect
+
+- Past builds stay around with their dated tags. A bad release can be
+  rolled back via the GitHub UI by re-marking an older release as
+  latest.
+- The app code is unchanged — `DB_DOWNLOAD_URL` still points at
+  `/releases/latest/download/eukaryotes.db`.
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;
