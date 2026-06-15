@@ -40,7 +40,18 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import matplotlib.patches as mpatches  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
-from ete3 import ImgFace, TextFace, TreeStyle  # noqa: E402
+
+# Import treeview classes from their deep submodule paths, NOT from
+# `ete3` top-level. ete3/__init__.py wraps the treeview imports in a
+# bare `try ... except ImportError: pass`, which silently strips
+# ImgFace / TextFace / TreeStyle from ete3's namespace when the
+# underlying PyQt5 chain fails (missing libGL, sip alias, etc.) and
+# leaves `from ete3 import ImgFace` raising a *misleading* "cannot
+# import name 'ImgFace'" with no clue what really broke. Going through
+# the submodule path bypasses that swallowing and surfaces the real
+# exception in the deploy log.
+from ete3.treeview.faces import ImgFace, TextFace  # noqa: E402
+from ete3.treeview.main import TreeStyle  # noqa: E402
 
 from src.ete_utils import get_ncbi  # noqa: E402
 from src.metrics import CladeMetadata, METRICS, Metric  # noqa: E402
