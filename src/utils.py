@@ -15,6 +15,7 @@ from src.constants import (
     DB_SCHEMA_VERSION_LEGACY,
     DB_SCHEMA_VERSION_MIN_COMPATIBLE,
 )
+from src.metrics import METRICS
 
 _DOWNLOAD_TIMEOUT_SECONDS = 300
 log = logging.getLogger("euka.utils")
@@ -115,42 +116,29 @@ def generate_tsv(_conn, root_taxid, target_rank, _fetch_func):
     taxa_names = {t[0]: t[1] for t in query_taxa}
     
     metadata = database.build_phylum_metadata(_conn, query_taxids, exclude_empty=False)
-    
+
     output = io.StringIO()
     writer = csv.writer(output, delimiter='\t')
-    
-    # Header in snake_case
-    writer.writerow([
-        "taxon_id", 
-        "name", 
-        "total_species", 
-        "species_with_assemblies", 
-        "species_with_annotations", 
-        "species_with_rna_seq", 
-        "species_with_long_read_rna_seq", 
-        "total_assemblies", 
-        "total_annotations", 
-        "total_rna_seq", 
-        "total_long_read_rna_seq"
-    ])
-    
+
+    # Single source of truth for the TSV column schema: each entry is
+    # (column_name, value_fn). Header row is `[name for name, _ in cols]`
+    # and each data row is `[fn(tid, stats) for _, fn in cols]` — so the
+    # header cannot drift from the row. Fixed prefix, then per-metric
+    # species-covered count, then per-metric total-runs count, all in
+    # METRICS order.
+    columns: list[tuple[str, callable]] = [
+        ("taxon_id", lambda tid, stats: tid),
+        ("name", lambda tid, stats: taxa_names.get(tid, "Unknown")),
+        ("total_species", lambda tid, stats: int(stats.get("n_rows", 0))),
+    ]
+    for m in METRICS:
+        columns.append((m.tsv_count_column, lambda tid, stats, k=m.coverage_key: int(stats.get(k, 0))))
+    for m in METRICS:
+        columns.append((m.tsv_total_column, lambda tid, stats, k=m.total_key: int(stats.get(k, 0))))
+
+    writer.writerow([name for name, _ in columns])
     for taxid in query_taxids:
-        name = taxa_names.get(taxid, "Unknown")
         stats = metadata.get(taxid, {})
-        
-        # Guard against missing stats implicitly returning missing keys
-        writer.writerow([
-            taxid,
-            name,
-            int(stats.get('n_rows', 0)),
-            int(stats.get('c_ass', 0)),
-            int(stats.get('c_ann', 0)),
-            int(stats.get('c_rna', 0)),
-            int(stats.get('c_lng', 0)),
-            int(stats.get('s_ass', 0)),
-            int(stats.get('s_ann', 0)),
-            int(stats.get('s_rna', 0)),
-            int(stats.get('s_lng', 0))
-        ])
-        
+        writer.writerow([fn(taxid, stats) for _, fn in columns])
+
     return output.getvalue()

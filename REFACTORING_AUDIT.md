@@ -283,7 +283,7 @@ app.py         # thin orchestrator
 **C. Schema versioning** via `PRAGMA user_version`; app refuses stale DB.
 **D. Pipeline as state machine** — fetch steps produce snapshot files; build step is pure.
 **E. Long-lived Qt render worker** — retire spawn-per-render dance.
-**F. Config-driven metric definition** — single `METRICS: list[Metric]` replaces 10+ hardcoded references to `ass/ann/rna/lng`.
+**F.** ✅ *(2026-06-15)* Config-driven metric definition — single `METRICS: tuple[Metric, ...]` in `src/metrics.py` replaces all hardcoded `ass/ann/rna/lng` references across `database.py`, `visualization.py`, `app.py`, and `utils.py` (Batch 11).
 
 ---
 
@@ -367,7 +367,7 @@ app.py         # thin orchestrator
 
 29. Split `app.py` into `ui/` modules + thin orchestrator.
 30. Replace dict-of-dicts metadata with `@dataclass(frozen=True, slots=True) CladeMetadata` end-to-end.
-31. `Metric` enum + config table for the four resources.
+31. ✅ *(2026-06-15)* `Metric` enum + config table for the four resources. *(Batch 11: new `src/metrics.py` with frozen `Metric` dataclass + `METRICS` tuple. Drives `database.py` column groups, `visualization.py` bar/legend/count colors, `app.py` filter/sort dropdowns, and `utils.py` TSV schema. 10 metric-config sanity tests + 3 database-drift guards; full suite 83 passed / 3 skipped.)*
 32. Pipeline as staged state machine (per-step snapshot files; idempotent build).
 33. ✅ Add `pyproject.toml`; drop `sys.path.insert` hacks. *(Batch 7 added pyproject.toml; Batch 8 removed the 5 sys.path hacks across db_builder/ and tests/conftest.py.)*
 34. ✅ `tests/` with fixture SQLite + parity test (SQL path vs Python path produce identical results) — done as Batch 6.

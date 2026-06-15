@@ -28,13 +28,15 @@ import matplotlib.patches as mpatches  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 from ete3 import ImgFace, NCBITaxa, TextFace, TreeStyle  # noqa: E402
 
+from src.metrics import METRICS, Metric  # noqa: E402
+
 log = logging.getLogger("euka.visualization")
 
-# Paired ColorBrewer palette
-C_ASS_LIGHT = "#a6cee3"   # Assemblies    (light blue)
-C_ANN_DARK  = "#1f78b4"   # Annotations   (dark  blue)
-C_RNA_LIGHT = "#b2df8a"   # Any RNA-Seq   (light green)
-C_LNG_DARK  = "#33a02c"   # Long-Read RNA (dark  green)
+# Per-side light/dark lookup so the legend can name the four corners of
+# the divergent bar chart without re-hardcoding the metric keys.
+_BY_SIDE_AND_OVERLAY: dict[tuple[str, bool], Metric] = {
+    (m.side, m.overlay): m for m in METRICS
+}
 
 # Shared bar-chart geometry
 BAR_FIG_W   = 4.0
@@ -60,17 +62,19 @@ def _apply_shared_axes(ax) -> None:
 def generate_bar_chart(taxid: int, meta: dict, tmp_dir: str) -> str:
     """Horizontal divergent bar for a single taxon, saved as a PNG.
 
-    Left  (negative x): Assemblies (light) with Annotations overlaid (dark).
-    Right (positive x): Any RNA-Seq (light) with Long-Read overlaid (dark).
+    Left half (negative x): the two `side="left"` metrics — light base
+    bar with the overlay metric drawn on top. Right half mirrors it for
+    the `side="right"` metrics. Light bars sit at zorder 2, dark overlays
+    at zorder 3 so the darker metric stays visible when both are non-zero.
     """
     fig, ax = plt.subplots(figsize=(BAR_FIG_W, BAR_FIG_H), dpi=BAR_DPI)
     _apply_shared_axes(ax)
 
     kw = dict(height=BAR_HEIGHT, align="center", edgecolor="white", linewidth=0.4)
-    ax.barh(0, -meta["p_ass"], color=C_ASS_LIGHT, zorder=2, **kw)
-    ax.barh(0, -meta["p_ann"], color=C_ANN_DARK,  zorder=3, **kw)
-    ax.barh(0,  meta["p_rna"], color=C_RNA_LIGHT, zorder=2, **kw)
-    ax.barh(0,  meta["p_lng"], color=C_LNG_DARK,  zorder=3, **kw)
+    for m in METRICS:
+        direction = -1 if m.side == "left" else 1
+        zorder = 3 if m.overlay else 2
+        ax.barh(0, direction * meta[m.percent_key], color=m.color, zorder=zorder, **kw)
 
     ax.axis("off")
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
@@ -133,8 +137,14 @@ def generate_legend_img(tmp_dir: str) -> str:
             facecolor=c_dark, edgecolor="white", linewidth=0.5))
         ax.text(x0_d + swatch_w + gap, y_center, label_right, ha="left", **label_kw)
 
-    _row(0.72, C_ASS_LIGHT, C_RNA_LIGHT, "Assembled", "RNA-Seq (Any)")
-    _row(0.25, C_ANN_DARK,  C_LNG_DARK,  "Annotated", "Long-Read RNA")
+    # Top row pairs the two light (non-overlay) metrics; bottom row pairs
+    # the two dark (overlay) metrics. Both rows go left-side → right-side.
+    light_left  = _BY_SIDE_AND_OVERLAY[("left", False)]
+    light_right = _BY_SIDE_AND_OVERLAY[("right", False)]
+    dark_left   = _BY_SIDE_AND_OVERLAY[("left", True)]
+    dark_right  = _BY_SIDE_AND_OVERLAY[("right", True)]
+    _row(0.72, light_left.color, light_right.color, light_left.legend_label, light_right.legend_label)
+    _row(0.25, dark_left.color,  dark_right.color,  dark_left.legend_label,  dark_right.legend_label)
 
     ax.axvline(0.5, ymin=0.05, ymax=0.95, color=SPINE_COLOR, linewidth=0.8, linestyle="--")
 
@@ -216,10 +226,11 @@ def create_layout_fn(ncbi, phylum_metadata, include_counts, tmp_dir):
                 txt_face.margin_right = 0
                 node.add_face(txt_face, column=col_idx_txt, position="aligned")
 
-            _add_count_col(meta["s_ass"], meta["c_ass"], C_ASS_LIGHT, 3, 4)
-            _add_count_col(meta["s_ann"], meta["c_ann"], C_ANN_DARK,  5, 6)
-            _add_count_col(meta["s_rna"], meta["c_rna"], C_RNA_LIGHT, 7, 8)
-            _add_count_col(meta["s_lng"], meta["c_lng"], C_LNG_DARK,  9, 10)
+            # Column layout: (swatch, "{entries:,} ({organisms:,})") pair
+            # per metric, starting at column 3 — so metric i lives in
+            # columns 3+2i (swatch) and 4+2i (text).
+            for i, m in enumerate(METRICS):
+                _add_count_col(meta[m.total_key], meta[m.coverage_key], m.color, 3 + 2 * i, 4 + 2 * i)
 
     return my_layout
 

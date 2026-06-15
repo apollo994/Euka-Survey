@@ -17,6 +17,7 @@ from src.constants import (
     RENDER_SUBPROCESS_TIMEOUT_SECONDS,
     STANDARD_BREAKPOINTS,
 )
+from src.metrics import METRICS
 
 # Constants
 DB_PATH = "eukaryotes.db" # For local development
@@ -349,12 +350,7 @@ def main():
         
         with st.form("tree_settings_form", border=True):
             st.subheader("Filter Nodes", anchor=False)
-            filter_options = {
-                "Assemblies": "c_ass",
-                "Annotations": "c_ann",
-                "RNA-Seq (Any)": "c_rna",
-                "Long-Read RNA": "c_lng"
-            }
+            filter_options = {m.filter_label: m.coverage_key for m in METRICS}
             selected_filters = st.multiselect("Require data for (leaves node out if it lacks data)", list(filter_options.keys()), placeholder="Select features...")
 
             filter_logic_label = "Match ALL (AND)"
@@ -369,14 +365,8 @@ def main():
             st.subheader("Sorting & Limits", anchor=False)
             sort_options = {
                 "Unique Species": "n_rows",
-                "Species with Assemblies": "c_ass",
-                "Species with Annotations": "c_ann",
-                "Species with RNA-Seq (Any)": "c_rna",
-                "Species with Long-Read RNA": "c_lng",
-                "Assemblies": "s_ass",
-                "Annotations": "s_ann",
-                "RNA-Seq experiments (Any)": "s_rna",
-                "Long-Read RNA-Seq experiments": "s_lng"
+                **{m.sort_count_label: m.coverage_key for m in METRICS},
+                **{m.sort_total_label: m.total_key for m in METRICS},
             }
             cols = st.columns(2)
             

@@ -28,6 +28,7 @@ from enum import Enum
 from typing import Iterable
 
 from src.constants import SQLITE_MAX_VARIABLES
+from src.metrics import COVERAGE_KEYS, METRICS, PERCENT_KEYS, TOTAL_KEYS
 
 
 class FilterLogic(str, Enum):
@@ -36,10 +37,10 @@ class FilterLogic(str, Enum):
     OR = "OR"
 
 
-# Column groups — single source of truth for the metadata shape.
-_COUNT_KEYS = ("n_rows", "c_ass", "c_ann", "c_rna", "c_lng", "s_ass", "s_ann", "s_rna", "s_lng")
-_COVERAGE_KEYS = ("c_ass", "c_ann", "c_rna", "c_lng")  # used by exclude_empty and percentage math
-_SQL_COLUMNS = "taxid, n_rows, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng"
+# Column groups derived from src.metrics.METRICS — single source of truth.
+_COUNT_KEYS: tuple[str, ...] = ("n_rows",) + COVERAGE_KEYS + TOTAL_KEYS
+_COVERAGE_KEYS: tuple[str, ...] = COVERAGE_KEYS  # exclude_empty + percentage math
+_SQL_COLUMNS: str = ", ".join(("taxid", "n_rows") + COVERAGE_KEYS + TOTAL_KEYS)
 
 # Chunk size for IN-list queries — SQLite has a hard cap of 999 host params
 # by default; leave headroom for the other bound parameters in the query.
@@ -47,26 +48,27 @@ _IN_CHUNK = SQLITE_MAX_VARIABLES - 99
 
 
 def _row_to_metadata(row: tuple) -> dict:
-    """Build the per-taxid metadata dict from a 10-tuple result row.
+    """Build the per-taxid metadata dict from a result row.
 
-    Row order matches `_SQL_COLUMNS`:
-        (taxid, n_rows, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng)
+    Row order matches `_SQL_COLUMNS`: taxid first, then n_rows, then the
+    coverage columns (c_<key> for each metric), then the total columns
+    (s_<key> for each metric) — all in METRICS order.
     """
-    _, n, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng = row
-    return {
-        "n_rows": n,
-        "c_ass": c_ass, "c_ann": c_ann, "c_rna": c_rna, "c_lng": c_lng,
-        "s_ass": s_ass, "s_ann": s_ann, "s_rna": s_rna, "s_lng": s_lng,
-        "p_ass": (c_ass / n * 100) if n else 0.0,
-        "p_ann": (c_ann / n * 100) if n else 0.0,
-        "p_rna": (c_rna / n * 100) if n else 0.0,
-        "p_lng": (c_lng / n * 100) if n else 0.0,
-    }
+    _, n, *rest = row
+    n_metrics = len(METRICS)
+    coverage_values = rest[:n_metrics]
+    total_values = rest[n_metrics:]
+    out: dict = {"n_rows": n}
+    out.update(dict(zip(COVERAGE_KEYS, coverage_values)))
+    out.update(dict(zip(TOTAL_KEYS, total_values)))
+    for c_key, p_key in zip(COVERAGE_KEYS, PERCENT_KEYS):
+        out[p_key] = (out[c_key] / n * 100) if n else 0.0
+    return out
 
 
 def _empty_metadata() -> dict:
     """Zero-filled metadata for taxa absent from precomputed_clade_features."""
-    return {k: 0 for k in _COUNT_KEYS} | {f"p_{r}": 0.0 for r in ("ass", "ann", "rna", "lng")}
+    return {k: 0 for k in _COUNT_KEYS} | {k: 0.0 for k in PERCENT_KEYS}
 
 
 def _secondary_sort_key(sort_by_key: str) -> str:
