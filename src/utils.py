@@ -125,20 +125,22 @@ def generate_tsv(_conn, root_taxid, target_rank, _fetch_func):
     # and each data row is `[fn(tid, stats) for _, fn in cols]` — so the
     # header cannot drift from the row. Fixed prefix, then per-metric
     # species-covered count, then per-metric total-runs count, all in
-    # METRICS order.
+    # METRICS order. `stats` is a CladeMetadata; dynamic field access via
+    # getattr keeps the lambdas indexed by the m.coverage_key/m.total_key
+    # strings stored on each Metric.
     columns: list[tuple[str, callable]] = [
         ("taxon_id", lambda tid, stats: tid),
         ("name", lambda tid, stats: taxa_names.get(tid, "Unknown")),
-        ("total_species", lambda tid, stats: int(stats.get("n_rows", 0))),
+        ("total_species", lambda tid, stats: stats.n_rows),
     ]
     for m in METRICS:
-        columns.append((m.tsv_count_column, lambda tid, stats, k=m.coverage_key: int(stats.get(k, 0))))
+        columns.append((m.tsv_count_column, lambda tid, stats, k=m.coverage_key: getattr(stats, k)))
     for m in METRICS:
-        columns.append((m.tsv_total_column, lambda tid, stats, k=m.total_key: int(stats.get(k, 0))))
+        columns.append((m.tsv_total_column, lambda tid, stats, k=m.total_key: getattr(stats, k)))
 
     writer.writerow([name for name, _ in columns])
     for taxid in query_taxids:
-        stats = metadata.get(taxid, {})
+        stats = metadata[taxid]
         writer.writerow([fn(taxid, stats) for _, fn in columns])
 
     return output.getvalue()

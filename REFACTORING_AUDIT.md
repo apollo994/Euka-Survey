@@ -12,15 +12,15 @@ Source-of-truth for findings; update as items are completed.
 | # | Refactor | Impact | Difficulty | Status |
 |---|---|---|---|---|
 | 1 | Eliminate the duplicated filter/sort/limit logic between `app.py` (Python fallback) and `src/database.py::get_filtered_taxa_metadata` (SQL path) by routing both through a single helper that accepts pre-resolved taxids | High — biggest correctness risk in the repo; CLAUDE.md explicitly warns about keeping the paths in sync | Medium | **DONE** (2026-06-15) — parity verified |
-| 2 | Extract a single `NCBITaxa` module-level singleton/accessor (with thread-safe lazy init) and reuse it across `src/taxonomy.py`, `src/ete_utils.py`, `src/visualization.py`, `app.py`, and `db_builder/` | High — currently 5+ instantiations per Streamlit rerun, opens many SQLite handles, slows hot path | Low | TODO |
+| 2 | Extract a single `NCBITaxa` module-level singleton/accessor (with thread-safe lazy init) and reuse it across `src/taxonomy.py`, `src/ete_utils.py`, `src/visualization.py`, `app.py`, and `db_builder/` | High — currently 5+ instantiations per Streamlit rerun, opens many SQLite handles, slows hot path | Low | **PARTIAL / BLOCKED** — `@lru_cache` on lookup helpers in place; full module-level singleton blocked by Streamlit thread-affinity (Qt/SQLite handles must stay on the worker thread). Needs thread-local accessor. |
 | 3 | Split `app.py` (530 lines) into `ui/sidebar.py`, `ui/query_config.py`, `ui/summary.py`, `ui/tree.py`, `ui/export.py` + a thin `app.py` controller | High — current file is the biggest maintainability liability | Medium | **DONE** (2026-06-15) — app.py now 57 lines |
-| 4 | De-duplicate the `phylum_metadata` row→dict construction in `database.py` (identical in `build_phylum_metadata` and `get_filtered_taxa_metadata`) | Medium | Low | TODO |
+| 4 | De-duplicate the `phylum_metadata` row→dict construction in `database.py` (identical in `build_phylum_metadata` and `get_filtered_taxa_metadata`) | Medium | Low | **DONE** (2026-06-15) — shared `_row_to_metadata` in `src/database.py:50`, used by both paths |
 | 5 | Add a render-subprocess timeout and proper error/cleanup in `app.py::generate_tree_svg_cached` (no `p.join(timeout=...)`, no `try/finally` cleanup, temp files written to CWD instead of `tempfile.NamedTemporaryFile`) | High — current code can hang the app indefinitely on a stuck child process | Low | **DONE** (2026-06-15) |
-| 6 | Move the live ETE3 rank-resolution block (lines 178–202 of `app.py`) into a memoized helper in `src/taxonomy.py` and cache by `root_taxid` | Medium-High — runs on every Streamlit rerun | Low | TODO |
-| 7 | Replace the `globals + cached path` pattern in `src/visualization.py` (`_AXIS_IMG_PATH`, `_LEGEND_IMG_PATH`, `_COLOR_SQUARES`) with `functools.lru_cache`-decorated generators returning paths inside a per-render `tempfile.TemporaryDirectory` (so the shared `.tmp_bars/` race goes away) | Medium-High | Medium | TODO |
-| 8 | Make the `db_builder` pipeline incremental, idempotent, and resilient: each step writes to a staging file/table, exceptions are caught per step, and `precompute_taxa.py` is called from `pipeline_build_db.main()` instead of only from the GitHub workflow | High | Medium | TODO |
+| 6 | Move the live ETE3 rank-resolution block (lines 178–202 of `app.py`) into a memoized helper in `src/taxonomy.py` and cache by `root_taxid` | Medium-High — runs on every Streamlit rerun | Low | **DONE** (2026-06-15) — `taxonomy.resolve_valid_ranks(root_taxid)` with `@lru_cache(maxsize=512)` |
+| 7 | Replace the `globals + cached path` pattern in `src/visualization.py` (`_AXIS_IMG_PATH`, `_LEGEND_IMG_PATH`, `_COLOR_SQUARES`) with `functools.lru_cache`-decorated generators returning paths inside a per-render `tempfile.TemporaryDirectory` (so the shared `.tmp_bars/` race goes away) | Medium-High | Medium | **DONE** (2026-06-15) — per-render `tempfile.TemporaryDirectory(prefix="euka_bars_")`; module globals removed |
+| 8 | Make the `db_builder` pipeline incremental, idempotent, and resilient: each step writes to a staging file/table, exceptions are caught per step, and `precompute_taxa.py` is called from `pipeline_build_db.main()` instead of only from the GitHub workflow | High | Medium | **PARTIAL** (2026-06-15) — resilience done (`@_step` + `PipelineError` + `.partial` → `os.replace`); `precompute_taxa` now invoked as step 7 of `pipeline_build_db.main()`. Incremental/idempotent snapshot-state-machine (Roadmap #32) still open. |
 | 9 | Centralize the "common taxa" set (`{2759, 33208, 40674, 9443, 4751, 33090}`) and the rank/filter/sort label maps into `src/constants.py`. Currently duplicated across `app.py`, `precompute_taxa.py`, `pipeline_build_db.py` | Medium | Low | **DONE** (2026-06-15) |
-| 10 | Add a covering index `CREATE INDEX idx_precomputed_taxa_cover ON precomputed_taxa(root_taxid, target_rank, taxid, name)` so the count + fetch can be served from the index alone | Medium | Low | **PARTIAL** — schema updated in `precompute_taxa.py`; takes effect on next DB regen |
+| 10 | Add a covering index `CREATE INDEX idx_precomputed_taxa_cover ON precomputed_taxa(root_taxid, target_rank, taxid, name)` so the count + fetch can be served from the index alone | Medium | Low | **DONE** (2026-06-15) — index present in shipped DB; `EXPLAIN QUERY PLAN` confirms `USING COVERING INDEX idx_precomputed_taxa_cover` |
 
 ---
 
@@ -306,8 +306,8 @@ app.py         # thin orchestrator
 
 ### Medium
 - **M1.** ✅ *(2026-06-15)* `app.py` 530 lines in one function — now 57 lines (Batch 12).
-- **M2.** Duplicate row→dict construction in `database.py`.
-- **M3.** Dict-of-dicts metadata stringly-typed.
+- **M2.** ✅ *(2026-06-15)* Duplicate row→dict construction in `database.py` — shared `_row_to_metadata` helper used by both `build_phylum_metadata` and `get_filtered_taxa_metadata`.
+- **M3.** ✅ *(2026-06-15)* Dict-of-dicts metadata stringly-typed — replaced end-to-end with `@dataclass(frozen=True, slots=True) CladeMetadata` in `src/metrics.py`; all data/UI/test paths read via attribute access (or `getattr` for dynamic keys driven by `Metric` config). Percentages computed on demand via `m.percent(key)`.
 - **M4.** Magic numbers scattered.
 - **M5.** ✅ *(2026-06-15)* Common-taxa list duplicated.
 - **M6.** ⊘ *(2026-06-15)* `get_taxa_at_rank` slow for large clades — investigated, rejected: CTE rewrite is slower (no parent index in ETE3 SQLite); original retained with explanatory comment.
@@ -366,7 +366,7 @@ app.py         # thin orchestrator
 ### Phase 3 — Large architectural improvements
 
 29. ✅ *(2026-06-15)* Split `app.py` into `ui/` modules + thin orchestrator. *(Batch 12: app.py now 57 lines — set_page_config + main() that calls the five renderers. Sections live in ui/sidebar.py, ui/query_config.py, ui/summary.py, ui/tree.py, ui/export.py with shared state in ui/state.py::QueryState.)*
-30. Replace dict-of-dicts metadata with `@dataclass(frozen=True, slots=True) CladeMetadata` end-to-end.
+30. ✅ *(2026-06-15)* Replace dict-of-dicts metadata with `@dataclass(frozen=True, slots=True) CladeMetadata` end-to-end. *(Batch 13: `CladeMetadata` in `src/metrics.py` carries taxid + 9 count fields + `percent(key)` + `zero(taxid)`. `_row_to_metadata` is now `CladeMetadata(*row)` — guarded by `test_sql_columns_match_clade_metadata_field_order`. Consumers — `src/utils.generate_tsv`, `src/visualization.py`, `ui/summary.py` — use attribute access or `getattr(m, key)` for dynamic Metric-driven keys. Full suite: 92 passed, 3 skipped.)*
 31. ✅ *(2026-06-15)* `Metric` enum + config table for the four resources. *(Batch 11: new `src/metrics.py` with frozen `Metric` dataclass + `METRICS` tuple. Drives `database.py` column groups, `visualization.py` bar/legend/count colors, `app.py` filter/sort dropdowns, and `utils.py` TSV schema. 10 metric-config sanity tests + 3 database-drift guards; full suite 83 passed / 3 skipped.)*
 32. Pipeline as staged state machine (per-step snapshot files; idempotent build).
 33. ✅ Add `pyproject.toml`; drop `sys.path.insert` hacks. *(Batch 7 added pyproject.toml; Batch 8 removed the 5 sys.path hacks across db_builder/ and tests/conftest.py.)*

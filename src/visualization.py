@@ -28,7 +28,7 @@ import matplotlib.patches as mpatches  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
 from ete3 import ImgFace, NCBITaxa, TextFace, TreeStyle  # noqa: E402
 
-from src.metrics import METRICS, Metric  # noqa: E402
+from src.metrics import CladeMetadata, METRICS, Metric  # noqa: E402
 
 log = logging.getLogger("euka.visualization")
 
@@ -59,7 +59,7 @@ def _apply_shared_axes(ax) -> None:
     ax.set_ylim(-0.5, 0.5)
 
 
-def generate_bar_chart(taxid: int, meta: dict, tmp_dir: str) -> str:
+def generate_bar_chart(taxid: int, meta: CladeMetadata, tmp_dir: str) -> str:
     """Horizontal divergent bar for a single taxon, saved as a PNG.
 
     Left half (negative x): the two `side="left"` metrics — light base
@@ -74,7 +74,7 @@ def generate_bar_chart(taxid: int, meta: dict, tmp_dir: str) -> str:
     for m in METRICS:
         direction = -1 if m.side == "left" else 1
         zorder = 3 if m.overlay else 2
-        ax.barh(0, direction * meta[m.percent_key], color=m.color, zorder=zorder, **kw)
+        ax.barh(0, direction * meta.percent(m.key), color=m.color, zorder=zorder, **kw)
 
     ax.axis("off")
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
@@ -210,7 +210,7 @@ def create_layout_fn(ncbi, phylum_metadata, include_counts, tmp_dir):
         img_face.margin_right = 15
         node.add_face(img_face, column=1, position="aligned")
 
-        n_face = TextFace(f"{meta['n_rows']:,}", fsize=10, bold=True,
+        n_face = TextFace(f"{meta.n_rows:,}", fsize=10, bold=True,
                           ftype="times new roman", tight_text=True)
         n_face.margin_right = 20
         node.add_face(n_face, column=2, position="aligned")
@@ -230,7 +230,10 @@ def create_layout_fn(ncbi, phylum_metadata, include_counts, tmp_dir):
             # per metric, starting at column 3 — so metric i lives in
             # columns 3+2i (swatch) and 4+2i (text).
             for i, m in enumerate(METRICS):
-                _add_count_col(meta[m.total_key], meta[m.coverage_key], m.color, 3 + 2 * i, 4 + 2 * i)
+                _add_count_col(
+                    getattr(meta, m.total_key), getattr(meta, m.coverage_key),
+                    m.color, 3 + 2 * i, 4 + 2 * i,
+                )
 
     return my_layout
 

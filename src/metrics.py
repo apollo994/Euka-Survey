@@ -190,3 +190,46 @@ METRIC_KEYS: tuple[str, ...] = tuple(m.key for m in METRICS)
 COVERAGE_KEYS: tuple[str, ...] = tuple(m.coverage_key for m in METRICS)
 TOTAL_KEYS: tuple[str, ...] = tuple(m.total_key for m in METRICS)
 PERCENT_KEYS: tuple[str, ...] = tuple(m.percent_key for m in METRICS)
+
+
+@dataclass(frozen=True, slots=True)
+class CladeMetadata:
+    """Typed per-taxon rollup from `precomputed_clade_features`.
+
+    Field names mirror the SQL columns (`n_rows`, `c_<key>`, `s_<key>`)
+    so dynamic lookup via `getattr(meta, m.coverage_key)` keeps working
+    for code that iterates METRICS. Percentages are derived on demand
+    via `percent(key)` — not stored.
+    """
+
+    taxid: int
+    n_rows: int
+    c_ass: int
+    c_ann: int
+    c_rna: int
+    c_lng: int
+    s_ass: int
+    s_ann: int
+    s_rna: int
+    s_lng: int
+
+    def percent(self, key: str) -> float:
+        """Coverage percentage `c_<key> / n_rows * 100`.
+
+        `key` is one of METRIC_KEYS ("ass", "ann", "rna", "lng").
+        Returns 0.0 when `n_rows == 0` to avoid division by zero — matches
+        the previous dict-of-dicts behavior that stored a literal 0.0.
+        """
+        coverage: int = getattr(self, f"c_{key}")
+        return (coverage / self.n_rows * 100) if self.n_rows else 0.0
+
+    @classmethod
+    def zero(cls, taxid: int) -> "CladeMetadata":
+        """Zero-filled record for a taxon absent from
+        `precomputed_clade_features`. Lets the read paths return a
+        complete `dict[int, CladeMetadata]` without `None` sentinels."""
+        return cls(
+            taxid=taxid, n_rows=0,
+            c_ass=0, c_ann=0, c_rna=0, c_lng=0,
+            s_ass=0, s_ann=0, s_rna=0, s_lng=0,
+        )

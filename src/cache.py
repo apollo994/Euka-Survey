@@ -32,6 +32,7 @@ from src.constants import (
     DB_PATH,
     RENDER_SUBPROCESS_TIMEOUT_SECONDS,
 )
+from src.metrics import CladeMetadata
 
 
 @st.cache_resource(show_spinner="Downloading Database (this happens once)...")
@@ -101,7 +102,9 @@ def fetch_taxa_cached(_conn: sqlite3.Connection, root_taxid: int, target_rank: s
 
 
 @st.cache_data(max_entries=100, show_spinner=False)
-def get_phylum_metadata_cached(_conn: sqlite3.Connection, taxids: tuple, exclude_empty: bool) -> dict:
+def get_phylum_metadata_cached(
+    _conn: sqlite3.Connection, taxids: tuple, exclude_empty: bool,
+) -> dict[int, CladeMetadata]:
     """Bulk per-taxid metadata fetch. Wrap `database.build_phylum_metadata`."""
     return database.build_phylum_metadata(_conn, list(taxids), exclude_empty)
 
@@ -116,7 +119,7 @@ def get_filtered_taxa_metadata_cached(
     filter_logic: database.FilterLogic,
     sort_by_key: str,
     top_n: int,
-):
+) -> tuple[dict[int, CladeMetadata], int]:
     """SQL-pushdown filter/sort/limit when the root/rank pair is
     precomputed. Wraps `database.get_filtered_taxa_metadata`."""
     return database.get_filtered_taxa_metadata(
@@ -126,7 +129,9 @@ def get_filtered_taxa_metadata_cached(
 
 
 @st.cache_data(max_entries=50, show_spinner=False)
-def generate_tree_svg_cached(phylum_metadata: dict, include_counts: bool) -> bytes | None:
+def generate_tree_svg_cached(
+    phylum_metadata: dict[int, CladeMetadata], include_counts: bool,
+) -> bytes | None:
     """Render the phylogenetic tree SVG in a spawned subprocess.
 
     PyQt5 requires its QApplication on the main thread of a process;

@@ -9,16 +9,17 @@ two-paths-out-of-sync class of bug returning).
 import pytest
 
 from src.database import FilterLogic, filter_sort_limit_metadata
+from src.metrics import CladeMetadata
 
 
-def _meta(n_rows=10, c_ass=5, c_ann=4, c_rna=3, c_lng=1, s_ass=20, s_ann=15, s_rna=12, s_lng=2):
-    """Build a metadata dict with sensible defaults; override what you need."""
-    return {
-        "n_rows": n_rows,
-        "c_ass": c_ass, "c_ann": c_ann, "c_rna": c_rna, "c_lng": c_lng,
-        "s_ass": s_ass, "s_ann": s_ann, "s_rna": s_rna, "s_lng": s_lng,
-        "p_ass": 0.0, "p_ann": 0.0, "p_rna": 0.0, "p_lng": 0.0,
-    }
+def _meta(taxid=1, n_rows=10, c_ass=5, c_ann=4, c_rna=3, c_lng=1,
+          s_ass=20, s_ann=15, s_rna=12, s_lng=2):
+    """Build a CladeMetadata with sensible defaults; override what you need."""
+    return CladeMetadata(
+        taxid=taxid, n_rows=n_rows,
+        c_ass=c_ass, c_ann=c_ann, c_rna=c_rna, c_lng=c_lng,
+        s_ass=s_ass, s_ann=s_ann, s_rna=s_rna, s_lng=s_lng,
+    )
 
 
 # --------------------------------------------------------------------- #

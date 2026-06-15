@@ -24,8 +24,8 @@ EXPECTED_TAXIDS = {101, 102, 103, 104, 105, 106}
 def test_build_phylum_metadata_returns_known_rows(fixture_db):
     meta = database.build_phylum_metadata(fixture_db, [101, 102, 103])
     assert set(meta) == {101, 102, 103}
-    assert meta[101]["c_ass"] == 80
-    assert meta[101]["s_rna"] == 2000
+    assert meta[101].c_ass == 80
+    assert meta[101].s_rna == 2000
 
 
 def test_build_phylum_metadata_zero_fills_unknown_taxids(fixture_db):
@@ -34,8 +34,8 @@ def test_build_phylum_metadata_zero_fills_unknown_taxids(fixture_db):
     distinguish 'no data' from 'taxon missing entirely')."""
     meta = database.build_phylum_metadata(fixture_db, [101, 999999], exclude_empty=False)
     assert set(meta) == {101, 999999}
-    assert meta[999999]["n_rows"] == 0
-    assert meta[999999]["c_ass"] == 0
+    assert meta[999999].n_rows == 0
+    assert meta[999999].c_ass == 0
 
 
 def test_build_phylum_metadata_exclude_empty_drops_zero_and_missing(fixture_db):
@@ -61,8 +61,8 @@ def test_build_phylum_metadata_chunked_query_respects_sqlite_limit(fixture_db):
 def test_build_phylum_metadata_percentages_match_counts(fixture_db):
     meta = database.build_phylum_metadata(fixture_db, [101])
     m = meta[101]
-    assert m["p_ass"] == pytest.approx(80 / 100 * 100)  # 80.0
-    assert m["p_ann"] == pytest.approx(60 / 100 * 100)  # 60.0
+    assert m.percent("ass") == pytest.approx(80 / 100 * 100)  # 80.0
+    assert m.percent("ann") == pytest.approx(60 / 100 * 100)  # 60.0
 
 
 # --------------------------------------------------------------------- #

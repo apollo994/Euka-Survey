@@ -9,8 +9,11 @@ bar chart, the filter dropdown, or the public TSV column ordering.
 
 import re
 
-from src.database import _COUNT_KEYS, _COVERAGE_KEYS, _SQL_COLUMNS
+import pytest
+
+from src.database import _SQL_COLUMNS
 from src.metrics import (
+    CladeMetadata,
     COVERAGE_KEYS,
     METRIC_KEYS,
     METRICS,
@@ -141,18 +144,71 @@ def test_only_lng_has_card_title_help_today():
 # --------------------------------------------------------------------- #
 
 
-def test_database_count_keys_derive_from_metrics():
-    """`_COUNT_KEYS` must equal (n_rows,) + coverage + total in METRICS
-    order — that's what `_row_to_metadata` unpacks."""
-    assert _COUNT_KEYS == ("n_rows",) + COVERAGE_KEYS + TOTAL_KEYS
-
-
-def test_database_coverage_keys_match_metrics():
-    assert _COVERAGE_KEYS == COVERAGE_KEYS
-
-
 def test_database_sql_columns_match_metric_order():
     """`_SQL_COLUMNS` is interpolated into SELECTs; if its order desyncs
     from `_row_to_metadata`'s unpacking we'd silently swap values."""
     expected = ", ".join(("taxid", "n_rows") + COVERAGE_KEYS + TOTAL_KEYS)
     assert _SQL_COLUMNS == expected
+
+
+def test_sql_columns_match_clade_metadata_field_order():
+    """`_row_to_metadata` does `CladeMetadata(*row)` — so the SELECT
+    column order MUST match the dataclass field order, or the dataclass
+    silently mis-maps SQL values onto fields."""
+    fields = tuple(CladeMetadata.__dataclass_fields__)
+    sql_cols = tuple(c.strip() for c in _SQL_COLUMNS.split(","))
+    assert fields == sql_cols
+
+
+# --------------------------------------------------------------------- #
+# CladeMetadata behavior
+# --------------------------------------------------------------------- #
+
+
+def test_clade_metadata_is_frozen():
+    m = CladeMetadata.zero(1)
+    with pytest.raises((AttributeError, Exception)):
+        m.n_rows = 5  # type: ignore[misc]
+
+
+def test_clade_metadata_equality_is_value_based():
+    """Parity test in test_database depends on this: two CladeMetadata
+    with identical field values must compare equal."""
+    a = CladeMetadata(taxid=1, n_rows=10,
+                      c_ass=1, c_ann=2, c_rna=3, c_lng=4,
+                      s_ass=5, s_ann=6, s_rna=7, s_lng=8)
+    b = CladeMetadata(taxid=1, n_rows=10,
+                      c_ass=1, c_ann=2, c_rna=3, c_lng=4,
+                      s_ass=5, s_ann=6, s_rna=7, s_lng=8)
+    assert a == b
+
+
+def test_clade_metadata_zero_has_all_fields_zero():
+    m = CladeMetadata.zero(42)
+    assert m.taxid == 42
+    for k in ("n_rows",) + COVERAGE_KEYS + TOTAL_KEYS:
+        assert getattr(m, k) == 0
+
+
+def test_percent_method_matches_coverage_over_n_rows():
+    m = CladeMetadata(taxid=1, n_rows=100,
+                      c_ass=25, c_ann=50, c_rna=75, c_lng=10,
+                      s_ass=0, s_ann=0, s_rna=0, s_lng=0)
+    assert m.percent("ass") == pytest.approx(25.0)
+    assert m.percent("ann") == pytest.approx(50.0)
+    assert m.percent("rna") == pytest.approx(75.0)
+    assert m.percent("lng") == pytest.approx(10.0)
+
+
+def test_percent_method_returns_zero_when_n_rows_is_zero():
+    """Avoids ZeroDivisionError; matches the previous dict-of-dicts
+    behavior that stored a literal 0.0 for p_* when n_rows == 0."""
+    m = CladeMetadata.zero(1)
+    for key in METRIC_KEYS:
+        assert m.percent(key) == 0.0
+
+
+def test_percent_method_rejects_unknown_key():
+    m = CladeMetadata.zero(1)
+    with pytest.raises(AttributeError):
+        m.percent("nope")

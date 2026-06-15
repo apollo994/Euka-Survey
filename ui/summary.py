@@ -10,7 +10,7 @@ import sqlite3
 import streamlit as st
 
 from src.cache import get_phylum_metadata_cached
-from src.metrics import METRICS, Metric
+from src.metrics import CladeMetadata, METRICS, Metric
 from ui.state import QueryState
 
 
@@ -41,7 +41,7 @@ def render_summary(conn: sqlite3.Connection, query: QueryState) -> None:
     # Prominent top-level metric.
     st.metric(
         label=f":material/groups: Total Species under {query.root_name}",
-        value=f"{int(stats['n_rows']):,}",
+        value=f"{stats.n_rows:,}",
         help="Total number of unique species tracked in this clade",
     )
 
@@ -52,7 +52,7 @@ def render_summary(conn: sqlite3.Connection, query: QueryState) -> None:
             _render_metric_card(metric, stats, query.root_taxid)
 
 
-def _render_metric_card(metric: Metric, stats: dict, root_taxid: int) -> None:
+def _render_metric_card(metric: Metric, stats: CladeMetadata, root_taxid: int) -> None:
     """Render one of the four summary cards."""
     with st.container(border=True):
         title_markdown = f"##### :material/{metric.card_icon}: :{metric.card_color}[{metric.card_title}]"
@@ -63,12 +63,12 @@ def _render_metric_card(metric: Metric, stats: dict, root_taxid: int) -> None:
 
         st.metric(
             label="Species Covered",
-            value=f"{int(stats[metric.coverage_key]):,}",
+            value=f"{getattr(stats, metric.coverage_key):,}",
             help=metric.species_help,
         )
         st.metric(
             label=metric.total_label,
-            value=f"{int(stats[metric.total_key]):,}",
+            value=f"{getattr(stats, metric.total_key):,}",
             help=metric.total_help,
         )
         url = metric.external_url(root_taxid)
