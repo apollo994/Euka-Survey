@@ -109,13 +109,68 @@ the audit.
 
 ## Testing
 
-There is **no test suite yet**. Tracked as audit item **H7** and as
-roadmap Phase 3 #34.
+### Running the test suite
 
-Until that's in place, the testing checklist is manual. See
-[Manual testing checklist](#manual-testing-checklist) below.
+```bash
+conda activate euka_refactored
+pytest                 # default: 63 tests, ~1 second
+pytest -v              # verbose: shows each test name + outcome
+pytest -m network      # also run the network smoke tests against ENA
+pytest tests/test_database.py    # run a single file
+pytest -k filter_sort  # run by name pattern
+```
+
+If `pytest` is missing (you're on an older conda env that pre-dates the
+addition), install it into the active env:
+
+```bash
+pip install pytest
+```
+
+It's already declared in `environment.yml`, so fresh envs get it
+automatically.
+
+### What's covered
+
+- **`test_constants.py`** — sanity checks: `COMMON_CLADES` is well-
+  formed, `ALLOWED_RANKS ⊆ FULL_RANKS`, rank ordering is canonical.
+- **`test_filter_sort_limit.py`** — pure unit tests on the canonical
+  filter/sort/limit helper that backs both the SQL and Python paths.
+- **`test_database.py`** — SQL pushdown vs Python helper parity
+  across a 16-scenario matrix; `build_phylum_metadata` chunking +
+  zero-fill behavior. This is the regression net for audit C1.
+- **`test_taxonomy.py`** — `resolve_valid_ranks` against live ETE3:
+  the six common clades + Vertebrata (unranked lineage walk) +
+  species-rank root (empty result) + unknown taxid (raises).
+- **`test_aggregations.py`** — `_precompute_clades_impl` rollup
+  correctness against real ETE3 taxonomy (human, chimp, mouse,
+  zebrafish). Includes the **audit C4 regression test**: a
+  synthesized species with no ETE3 lineage must be SKIPPED, not
+  self-attributed. (Hostile-tested: confirmed to fail if C4 is
+  reintroduced.)
+- **`test_ena_smoke.py`** — `@pytest.mark.network`, opt-in.
+  Hits real ENA with a tiny query, verifies response shape and that
+  short reads dominate for Homo sapiens.
+
+Tests that need live ETE3 (`test_taxonomy.py`, `test_aggregations.py`)
+auto-skip if `~/.etetoolkit/taxa.sqlite` isn't present. Tests that
+need the internet (`test_ena_smoke.py`) are skipped by default —
+opt in with `-m network`.
+
+### Adding a test
+
+- Use the `fixture_db` fixture in `tests/conftest.py` for anything
+  database-shaped. It returns an in-memory SQLite with the real
+  schema and a small hand-crafted dataset.
+- If your test would catch a real reported bug, name it
+  `test_<short_description>` and add a comment referencing the
+  audit / changelog item.
+- Tests should run in under a second unless marked `@pytest.mark.slow`.
 
 ### Manual testing checklist
+
+Even with the suite, the Streamlit UI itself has no automated tests.
+After non-trivial changes to `app.py` or `src/`:
 
 After non-trivial changes to `app.py` or `src/`:
 

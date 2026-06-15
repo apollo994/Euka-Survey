@@ -471,11 +471,63 @@ Future investigation:
 - Reproduce the row-count difference outside the pipeline with a
   side-by-side curl of both endpoints.
 
+## 2026-06-15 — Batch 6: Phase 3 — test suite
+
+### Closes audit H7 + roadmap Phase 3 #34.
+
+Eight days after the ENA TSV-streaming regression escaped to the user,
+the test suite that should have caught it. 63 tests + 2 network tests
++ a fixture-based test harness.
+
+### Infrastructure
+
+- `pytest.ini` — `testpaths = tests`, `markers` declared (`network`,
+  `slow`, `requires_ete3_db`), `--strict-markers`.
+- `environment.yml` — `pytest` added under pip deps.
+- `tests/conftest.py` — `fixture_db` fixture (in-memory SQLite with
+  the real schema + a hand-crafted dataset of 6 taxa), plus a
+  `pytest_collection_modifyitems` hook that skips `network` / `slow`
+  tests unless explicitly selected via `-m`.
+
+### Tests written
+
+| File | What it covers |
+|---|---|
+| `test_constants.py` | `COMMON_CLADES` well-formed, `ALLOWED_RANKS ⊆ FULL_RANKS`, canonical rank ordering, no chunk-size > SQLite cap. 10 tests. |
+| `test_filter_sort_limit.py` | The canonical filter/sort/limit helper. `exclude_empty`, AND vs OR, secondary-sort tiebreakers, top_n edges, empty inputs, FilterLogic enum parametrization. 14 tests. |
+| `test_database.py` | `build_phylum_metadata` zero-fill + chunking; `get_filtered_taxa_metadata` SQL behavior; **SQL/Python parity across a 16-scenario matrix** (audit C1 regression net). 29 tests. |
+| `test_taxonomy.py` | `resolve_valid_ranks` for each common clade + Vertebrata (unranked lineage walk) + species-rank root (empty) + unknown taxid (raises) + cache verification. 6 tests. Auto-skipped if ETE3 DB absent. |
+| `test_aggregations.py` | `_precompute_clades_impl` rollup correctness: ancestor crediting (human/chimp/mouse/zebrafish ↔ Mammalia/Primates/Eukaryota), species-rank filter, coverage vs count distinction, **the C4 regression test** (synthesized species with no ETE3 lineage must be SKIPPED, not self-attributed). 4 tests. |
+| `test_ena_smoke.py` | Hits real ENA with a tiny `tax_tree(9606)` query. Verifies response shape and that short reads dominate for Homo sapiens. 2 tests, `@pytest.mark.network`. |
+
+### Hostile-tested
+
+The C4 regression test was deliberately exercised against a manually-
+reintroduced version of the original bug to confirm it actually catches
+what it claims to. First version of the test passed silently against
+both the fixed and the buggy code (the species-rank filter was hiding
+the bug from the test). Rewrote with monkeypatched
+`NCBITaxa.get_rank` + `get_lineage_translator` to construct a taxid
+that's classified as a species but has no lineage — the exact narrow
+case the C4 fix addresses. Re-ran the hostile check: test fails on
+the bug, passes on the fix.
+
+### What's deliberately not covered
+
+- The Streamlit UI rendering — no headless Streamlit test harness in
+  place. Manual checklist in `docs/DEVELOPMENT.md`.
+- The ETE3 tree render subprocess — would need a full multiprocessing
+  + Qt fixture; deferred.
+- The full pipeline end-to-end — too slow (~30–60 minutes) and
+  network-dependent.
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;
   needs a thread-local accessor, not a naive module global. The
   `lru_cache`-on-lookups gives most of the wins safely in the interim.
+- **Phase 2 #25 (ENA streaming)** — reopened after the TSV regression;
+  diagnosis pending.
 - **Phase 2 #28 (caches → src/cache.py)** — straightforward but
   depends on the app.py UI split planned in Phase 3, so deferred
   there to avoid churn.

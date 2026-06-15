@@ -302,7 +302,7 @@ app.py         # thin orchestrator
 - **H4.** ⚠️ *Partial (2026-06-15)* — lookup `lru_cache` in place; full singleton blocked by Streamlit thread-affinity.
 - **H5.** ✅ *(2026-06-15)* Pipeline lacks per-step error handling and atomic output — `@_step` decorator + `PipelineError` + `.partial` → `os.replace` rename on success.
 - **H6.** ✅ *(2026-06-15)* Workflow has no DB-validation gate before publishing.
-- **H7.** No tests at all.
+- **H7.** ✅ *(2026-06-15)* No tests at all — pytest suite added (63 tests + 2 network); covers constants, filter/sort/limit, SQL/Python parity (audit C1 regression net), rank resolution, aggregation rollup correctness with explicit C4 regression test (hostile-tested).
 
 ### Medium
 - **M1.** `app.py` 530 lines in one function.
@@ -370,7 +370,7 @@ app.py         # thin orchestrator
 31. `Metric` enum + config table for the four resources.
 32. Pipeline as staged state machine (per-step snapshot files; idempotent build).
 33. Add `pyproject.toml`; drop `sys.path.insert` hacks; `python -m euka_survey.pipeline`.
-34. `tests/` with fixture SQLite + parity test (SQL path vs Python path produce identical results).
+34. ✅ `tests/` with fixture SQLite + parity test (SQL path vs Python path produce identical results) — done as Batch 6.
 35. `PRAGMA user_version` schema versioning.
 36. Long-lived Qt render worker (retire spawn-per-render).
 37. Versioned releases + `latest` pointer supporting rollback.

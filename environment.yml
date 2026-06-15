@@ -15,3 +15,6 @@ dependencies:
       - requests
       - tenacity
       - streamlit
+      # Dev-only — tests/ uses pytest. Installed everywhere so a fresh env
+      # supports `pytest` without an extra step.
+      - pytest
