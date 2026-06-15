@@ -5,7 +5,7 @@ from collections import defaultdict
 from contextlib import closing
 from pathlib import Path
 
-from ete3 import NCBITaxa
+from src.ete_utils import get_ncbi
 
 log = logging.getLogger("euka.precompute_aggregations")
 
@@ -30,7 +30,7 @@ def _batched(seq: list, n: int):
 
 
 def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
-    ncbi = NCBITaxa()
+    ncbi = get_ncbi()
 
     cursor = conn.cursor()
     cursor.execute(

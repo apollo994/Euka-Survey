@@ -26,8 +26,9 @@ matplotlib.use("Agg")
 
 import matplotlib.patches as mpatches  # noqa: E402
 import matplotlib.pyplot as plt  # noqa: E402
-from ete3 import ImgFace, NCBITaxa, TextFace, TreeStyle  # noqa: E402
+from ete3 import ImgFace, TextFace, TreeStyle  # noqa: E402
 
+from src.ete_utils import get_ncbi  # noqa: E402
 from src.metrics import CladeMetadata, METRICS, Metric  # noqa: E402
 
 log = logging.getLogger("euka.visualization")
@@ -295,7 +296,7 @@ def render_tree_in_process(phylum_metadata, include_counts, out_svg):
 
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-    ncbi = NCBITaxa()
+    ncbi = get_ncbi()
 
     # Batched lineage lookup (replaces an N+1 ncbi.get_lineage(tid) loop).
     # get_lineage_translator returns {taxid: [lineage]} only for taxids

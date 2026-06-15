@@ -11,9 +11,8 @@ These are slower paths invoked only when the precomputed lookup misses:
 
 from functools import lru_cache
 
-from ete3 import NCBITaxa
-
 from src.constants import ALLOWED_RANKS, FULL_RANKS
+from src.ete_utils import get_ncbi
 
 
 class UnknownTaxonError(ValueError):
@@ -35,7 +34,7 @@ def get_taxa_at_rank(root_taxid: int, rank: str) -> list[tuple[int, str]]:
     `NCBITaxa.get_descendant_taxa` already uses ETE3's optimized
     traversal, so we delegate.
     """
-    ncbi = NCBITaxa()
+    ncbi = get_ncbi()
     descendants = ncbi.get_descendant_taxa(root_taxid, intermediate_nodes=True)
     ranks = ncbi.get_rank(descendants)
     hits = [taxid for taxid, r in ranks.items() if r == rank]
@@ -54,7 +53,7 @@ def resolve_valid_ranks(root_taxid: int) -> tuple[str, ...]:
 
     Raises `UnknownTaxonError` if the taxid is not in the local taxonomy.
     """
-    ncbi = NCBITaxa()
+    ncbi = get_ncbi()
 
     try:
         root_rank = ncbi.get_rank([root_taxid]).get(root_taxid, "no rank")
