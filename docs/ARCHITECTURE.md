@@ -207,11 +207,12 @@ These are documented in detail in
 [REFACTORING_AUDIT.md](../REFACTORING_AUDIT.md) — listed here so the
 reader has the lay of the land before opening a PR:
 
-- **Two filter/sort/limit paths** (SQL when precomputed, Python
-  otherwise) must be kept in sync. Audit item **C1**.
-- **`.tmp_bars`** is a project-relative directory that the render
-  subprocess `rmtree`s on entry; racy with concurrent renders on
-  Streamlit Cloud. Audit item **H2**.
 - **`precompute_aggregations`** silently under-counts ancestors when
   ETE3 lineage lookups fail. Audit item **C4**.
+- **Pipeline lacks per-step error handling / atomic output.** Audit
+  item **H5**.
 - **No tests.** Audit item **H7**.
+- **`NCBITaxa` instantiated per call** — `lru_cache` mitigates the
+  hot-path repetition but a real thread-local singleton (Phase 2 #18)
+  is still pending; blocked on the Streamlit worker-thread / SQLite
+  thread-affinity interaction.

@@ -297,7 +297,7 @@ app.py         # thin orchestrator
 
 ### High
 - **H1.** ✅ *(2026-06-15)* No atomic write in `utils.ensure_database`. [`utils.py:8-16`]
-- **H2.** Race in `.tmp_bars` between concurrent users on Cloud. [`visualization.py:29-32`, `:60`]
+- **H2.** ✅ *(2026-06-15)* Race in `.tmp_bars` between concurrent users on Cloud — replaced with per-render `tempfile.TemporaryDirectory`; module globals dropped.
 - **H3.** ✅ *(2026-06-15)* `app.py` rank-resolution runs ETE3 on every rerun — moved to `taxonomy.resolve_valid_ranks` with `@lru_cache`.
 - **H4.** ⚠️ *Partial (2026-06-15)* — lookup `lru_cache` in place; full singleton blocked by Streamlit thread-affinity.
 - **H5.** Pipeline lacks per-step error handling and atomic output.
@@ -313,7 +313,7 @@ app.py         # thin orchestrator
 - **M6.** ⊘ *(2026-06-15)* `get_taxa_at_rank` slow for large clades — investigated, rejected: CTE rewrite is slower (no parent index in ETE3 SQLite); original retained with explanatory comment.
 - **M7.** `precompute_aggregations` loads 1.8M lineages in one call.
 - **M8.** ✅ *(2026-06-15)* `get_assemblies` uses `sys.exit(1)` instead of raising.
-- **M9.** `pyvirtualdisplay` ImportError silently swallowed.
+- **M9.** ✅ *(2026-06-15)* `pyvirtualdisplay` ImportError silently swallowed — broader `(FileNotFoundError, OSError)` catch + fallback to `QT_QPA_PLATFORM=offscreen`.
 - **M10.** ✅ *(2026-06-15)* No structured logging in `db_builder/`.
 
 ### Low
@@ -354,9 +354,9 @@ app.py         # thin orchestrator
 18. ⏳ Single `NCBITaxa` accessor in `src/ete_utils.py`; replace all `NCBITaxa()` calls. *(Blocked by Streamlit thread-affinity; needs thread-local accessor.)*
 19. ✅ Pull rank-resolution out of `app.py` into `taxonomy.resolve_valid_ranks(root_taxid)`.
 20. ⊘ Reimplement `get_taxa_at_rank` using the recursive-CTE pattern from `ete_utils`. *(Investigated and rejected: CTE is slower because ETE3 SQLite has no parent index.)*
-21. ⏳ Use `tempfile.TemporaryDirectory()` per render in `visualization.render_tree_in_process`; drop globals.
-22. ⏳ Pin matplotlib backend to Agg at start of `render_tree_in_process`.
-23. ⏳ Batch lineage lookup in `render_tree_in_process`.
+21. ✅ Use `tempfile.TemporaryDirectory()` per render in `visualization.render_tree_in_process`; drop globals.
+22. ✅ Pin matplotlib backend to Agg at start of `render_tree_in_process`.
+23. ✅ Batch lineage lookup in `render_tree_in_process`.
 24. ⏳ Chunk `get_lineage_translator` calls in `precompute_aggregations.py` (50k chunks).
 25. ⏳ Stream ENA reads via `iter_lines()` or paginate.
 26. ⏳ Per-step try/except in `pipeline_build_db.py`; `.partial` + rename. Call `precompute_taxa.precompute_common_clades` from the pipeline.

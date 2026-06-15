@@ -289,6 +289,79 @@ on clade depth. A `track`-column LIKE approach (single full scan,
 clades. The original implementation has been retained with an
 explanatory comment so the next reader doesn't re-investigate.
 
+## 2026-06-15 — Batch 4: Phase 2 — visualization rewrite
+
+### src/visualization.py
+
+**Audit H2 / Roadmap Phase 2 #21 — Per-render tempdir, no module globals**
+
+The biggest reliability finding remaining on the rendering path. The
+old code wrote per-leaf bar charts, the axis ruler, the legend, and
+color swatches into a project-relative `.tmp_bars/` directory, and
+cached image paths in module-level globals (`_AXIS_IMG_PATH`,
+`_LEGEND_IMG_PATH`, `_COLOR_SQUARES`). On entry, `render_tree_in_process`
+`shutil.rmtree`'d the directory and recreated it — racy with concurrent
+renders on Streamlit Cloud and broken-by-design (the path globals
+pointed at files that were about to be deleted).
+
+Now:
+- All helpers (`generate_bar_chart`, `generate_axis_img`,
+  `generate_legend_img`, color swatches) take `tmp_dir` as a parameter.
+- `_color_square_factory(tmp_dir)` returns a closure with a local
+  memoization cache (no module global).
+- `render_tree_in_process` creates a `tempfile.TemporaryDirectory(
+  prefix="euka_bars_")` and passes its path down. On exit (success or
+  exception) the tempdir is removed automatically.
+- `TMP_DIR`, `_AXIS_IMG_PATH`, `_LEGEND_IMG_PATH`, `_COLOR_SQUARES`
+  are all gone from module scope.
+
+**Roadmap Phase 2 #22 — matplotlib backend pinned to Agg**
+
+`matplotlib.use("Agg")` is called at import time, before
+`import matplotlib.pyplot`. This:
+- Prevents matplotlib from auto-picking a Qt backend in the child
+  process and colliding with ETE3's QApplication.
+- Has no observable effect on the Streamlit parent (it never uses
+  pyplot directly).
+
+**Roadmap Phase 2 #23 — Batched lineage validation**
+
+The old loop:
+```python
+for tid in phylum_metadata.keys():
+    try:
+        ncbi.get_lineage(tid)
+        valid_taxids.append(tid)
+    except ValueError:
+        pass
+```
+was an N+1 ETE3 lookup. Now:
+```python
+lineages = ncbi.get_lineage_translator(candidate_taxids)
+valid_taxids = [t for t in candidate_taxids if t in lineages]
+```
+— one SQLite query through ETE3 instead of up to 500.
+
+**Audit M9 / pulled forward — Graceful display fallback**
+
+`pyvirtualdisplay` was caught only on `ImportError`. If the package
+was installed but `Xvfb` wasn't (common in dev WSL without
+`packages.txt` installed), the subprocess crashed with a confusing
+`FileNotFoundError`. Now the broader case is caught and we fall back
+to Qt's built-in offscreen platform plugin (`QT_QPA_PLATFORM=offscreen`),
+which lets ETE3 render in the absence of any X server. Verified
+end-to-end against `eukaryotes.db`: a Mammalia+Family render of 10
+taxa now produces a valid 97 KB SVG in 1.6 s with no Xvfb installed.
+
+**Cleanup**
+- Dead `NodeStyle` import removed.
+- Module-level `import shutil` removed (no more `rmtree`).
+- Inner re-imports of `os`/`shutil`/`NCBITaxa` inside the subprocess
+  function removed (redundant — spawn already re-imports the module).
+- `int(node.name)` is now wrapped in `try/except` so that internal
+  nodes ETE3 may surface as leaves don't crash the layout function
+  (defensive — addresses an edge case flagged in the audit findings).
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;
