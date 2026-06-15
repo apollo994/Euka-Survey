@@ -29,10 +29,11 @@ jobs:
 
       - name: Build Database Pipeline
         run: |
-          # 1. Run the pipeline (fetches datasets, ENA reads, etc)
+          # The pipeline now does all 7 steps including precompute_taxa,
+          # and writes atomically to *.db.partial → *.db on success.
           python db_builder/pipeline_build_db.py
 
-          # 2. The pipeline drops a dated file like eukaryote_taxid_features_2026_05_11.db
+          # The pipeline drops a dated file like eukaryote_taxid_features_2026_05_11.db
           # Require exactly one match to catch leftover artifacts from a prior failed run.
           shopt -s nullglob
           built=( eukaryote_taxid_features_*.db )
@@ -41,9 +42,6 @@ jobs:
             exit 1
           fi
           mv "${built[0]}" eukaryotes.db
-
-          # 3. Bake the UI preview ranks into the fresh database
-          python db_builder/precompute_taxa.py --db eukaryotes.db
 
       - name: Smoke-test produced DB
         run: |

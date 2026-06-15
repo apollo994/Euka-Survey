@@ -3,7 +3,6 @@ Queries the EBI ENA portal API to fetch RNA-seq read metadata.
 Separates runs into long-read (ONT/PacBio) and short-read taxa.
 """
 
-import json
 import logging
 import os
 import sys
@@ -19,18 +18,27 @@ ENA_BASE = "https://www.ebi.ac.uk/ena/portal/api/search"
 log = logging.getLogger("euka.get_reads")
 
 
+_LONG_READ_PLATFORMS = {"OXFORD_NANOPORE", "PACBIO_SMRT"}
+
+
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=2, max=60))
 def fetch_ena_reads() -> tuple[dict[int, int], dict[int, int], int]:
-    """Query ENA portal API (POST) for RNA-seq reads.
+    """Query ENA portal API for RNA-seq runs and count by taxon × platform.
+
+    Streams the response line-by-line as TSV. Previously the entire JSON
+    array was loaded into memory via `r.json()`, which is a memory bomb
+    for multi-million-row responses.
 
     Returns (long_reads_txids, short_reads_txids, total_record_count).
-    `limit=0` fetches all records in one request.
     """
     payload = {
         "result": "read_run",
-        "query": f'tax_tree({EUKARYOTE_TXID}) AND (library_source="transcriptomic" OR library_strategy="rna-seq")',
+        "query": (
+            f'tax_tree({EUKARYOTE_TXID}) AND '
+            f'(library_source="transcriptomic" OR library_strategy="rna-seq")'
+        ),
         "fields": "tax_id,instrument_platform",
-        "format": "json",
+        "format": "tsv",
         "limit": 0,
     }
     r = requests.post(
@@ -42,31 +50,46 @@ def fetch_ena_reads() -> tuple[dict[int, int], dict[int, int], int]:
     )
     r.raise_for_status()
 
-    try:
-        data = r.json()
-    except requests.exceptions.JSONDecodeError as e:
-        # Re-raise so tenacity retries; previously this silently returned empty
-        # dicts and a zero count, which masked transient failures and left the
-        # pipeline producing a degenerate DB.
-        log.error("Failed to decode JSON from ENA: %s", e)
-        raise
-
     txids_count_long_reads: dict[int, int] = {}
     txids_count_short_reads: dict[int, int] = {}
+    total = 0
+    header: list[str] | None = None
 
-    for record in data:
-        try:
-            tax_id = int(record.get("tax_id"))
-        except (ValueError, TypeError):
+    for raw in r.iter_lines(decode_unicode=True):
+        if not raw:
+            continue
+        fields = raw.split("\t")
+        if header is None:
+            header = fields
+            try:
+                tax_idx = header.index("tax_id")
+                platform_idx = header.index("instrument_platform")
+            except ValueError as e:
+                # ENA returned an unexpected header; bail so tenacity retries.
+                log.error("Unexpected ENA TSV header: %r", header)
+                raise RuntimeError("unexpected ENA TSV header") from e
             continue
 
-        platform = record.get("instrument_platform", "")
-        if platform in ("OXFORD_NANOPORE", "PACBIO_SMRT"):
+        if len(fields) <= max(tax_idx, platform_idx):
+            continue
+        try:
+            tax_id = int(fields[tax_idx])
+        except ValueError:
+            continue
+
+        platform = fields[platform_idx]
+        if platform in _LONG_READ_PLATFORMS:
             txids_count_long_reads[tax_id] = txids_count_long_reads.get(tax_id, 0) + 1
         else:
             txids_count_short_reads[tax_id] = txids_count_short_reads.get(tax_id, 0) + 1
+        total += 1
 
-    return txids_count_long_reads, txids_count_short_reads, len(data)
+    if header is None:
+        # No data at all — should not happen for a healthy ENA response.
+        log.error("ENA returned no rows (not even a header).")
+        raise RuntimeError("empty ENA response")
+
+    return txids_count_long_reads, txids_count_short_reads, total
 
 
 if __name__ == "__main__":

@@ -20,6 +20,15 @@ def precompute_clades(db_path: Path):
         _precompute_clades_impl(conn)
 
 
+_LINEAGE_CHUNK = 50_000
+
+
+def _batched(seq: list, n: int):
+    """Yield successive `n`-sized chunks from `seq`."""
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
+
+
 def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
     ncbi = NCBITaxa()
 
@@ -31,49 +40,56 @@ def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
     leaf_rows = cursor.fetchall()
     log.info("Loaded %d leaf rows with features.", len(leaf_rows))
 
-    log.info("Filtering to only include 'species' rank...")
+    log.info("Filtering to only include 'species' rank (chunked)...")
     all_raw_taxids = [row[0] for row in leaf_rows]
-    try:
-        ranks = ncbi.get_rank(all_raw_taxids)
-    except Exception:
-        ranks = {}
+    ranks: dict[int, str] = {}
+    for chunk in _batched(all_raw_taxids, _LINEAGE_CHUNK):
+        try:
+            ranks.update(ncbi.get_rank(chunk))
+        except Exception as e:
+            log.warning("get_rank chunk failed (%d taxids): %s", len(chunk), e)
 
     leaf_rows = [row for row in leaf_rows if ranks.get(row[0]) == "species"]
     log.info("Kept %d species-rank rows after filtering.", len(leaf_rows))
 
-    # Dictionary to hold the aggregations for each ancestor
-    # Structure: clade_taxid -> {'n_rows', 'c_ass', 'c_ann', 'c_rna', 'c_lng', 's_ass', 's_ann', 's_rna', 's_lng'}
+    # Dictionary to hold the aggregations for each ancestor.
+    # Structure: clade_taxid -> {'n_rows', 'c_ass', 'c_ann', 'c_rna', 'c_lng',
+    #                            's_ass', 's_ann', 's_rna', 's_lng'}
     clade_aggs = defaultdict(lambda: {
         'n_rows': 0, 'c_ass': 0, 'c_ann': 0, 'c_rna': 0, 'c_lng': 0,
         's_ass': 0, 's_ann': 0, 's_rna': 0, 's_lng': 0,
     })
 
-    log.info("Rolling up lineages (this will take a moment)...")
-    start_time = time.time()
-
+    log.info("Resolving lineages in %d-chunk batches...", _LINEAGE_CHUNK)
     all_taxids = [row[0] for row in leaf_rows]
+    lineages: dict[int, list[int]] = {}
+    for chunk in _batched(all_taxids, _LINEAGE_CHUNK):
+        try:
+            lineages.update(ncbi.get_lineage_translator(chunk))
+        except KeyError as e:
+            log.warning("get_lineage_translator chunk failed (%d taxids): %s", len(chunk), e)
 
-    # ETE3 generates warnings for taxids not found, we handle gracefully.
-    try:
-        lineages = ncbi.get_lineage_translator(all_taxids)
-    except KeyError:
-        lineages = {}
-
+    log.info("Rolling up %d species into ancestor aggregates...", len(leaf_rows))
+    start_time = time.time()
     missing_lineages = 0
 
     for row in leaf_rows:
         taxid = row[0]
         s_short, s_long, s_ass, s_ann = row[1], row[2], row[3], row[4]
 
+        lineage = lineages.get(taxid)
+        if not lineage:
+            # Audit C4: previously this row was attributed only to itself
+            # (`lineage = [taxid]`), which silently under-counted every
+            # ancestor above it. Skipping is correct: without a lineage
+            # we cannot determine which ancestors this species belongs to.
+            missing_lineages += 1
+            continue
+
         has_ass = 1 if s_ass > 0 else 0
         has_ann = 1 if s_ann > 0 else 0
         has_rna = 1 if (s_short > 0 or s_long > 0) else 0
         has_lng = 1 if s_long > 0 else 0
-
-        lineage = lineages.get(taxid, [])
-        if not lineage:
-            missing_lineages += 1
-            lineage = [taxid]  # fallback to just itself
 
         for ancestor in lineage:
             agg = clade_aggs[ancestor]
@@ -89,7 +105,8 @@ def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
 
     if missing_lineages > 0:
         log.warning(
-            "%d taxids had no valid taxonomy lineage in ete3 and contributed only to themselves.",
+            "%d species had no valid taxonomy lineage in ete3 and were SKIPPED "
+            "(not counted against any ancestor). Investigate if this count is large.",
             missing_lineages,
         )
 

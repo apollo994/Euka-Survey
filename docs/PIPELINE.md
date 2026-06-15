@@ -22,32 +22,38 @@ the web app. It runs either:
                 │  db_builder/pipeline_build_db.py        │
                 └──────────────────┬──────────────────────┘
                                    │
-   [1/6] ete3 SQLite ─────────▶  all descendant species of Eukaryota (2759)
-   [2/6] NCBI datasets CLI ──▶  assembly_taxids: {taxid: count}
-   [3/6] Annotrieve API ─────▶  annotation_taxids: {taxid: count}
-   [4/6] ENA portal API ─────▶  long_read_taxids, short_read_taxids
-   [5/6] sqlite3 ────────────▶  taxid_features table
-   [6/6] ete3 lineages ──────▶  precomputed_clade_features table
-
-                                + (separately:)
-                                  precompute_taxa.py
-                                  → precomputed_taxa table
+   [1/7] ete3 SQLite ─────────▶  all descendant species of Eukaryota (2759)
+   [2/7] NCBI datasets CLI ──▶  assembly_taxids: {taxid: count}
+   [3/7] Annotrieve API ─────▶  annotation_taxids: {taxid: count}
+   [4/7] ENA portal API ─────▶  long_read_taxids, short_read_taxids
+   [5/7] sqlite3 ────────────▶  taxid_features table
+   [6/7] ete3 lineages ──────▶  precomputed_clade_features table
+   [7/7] ete3 + sqlite3 ─────▶  precomputed_taxa table (common clades)
 ```
 
 ### Step-by-step
 
-| Step | Module                                     | Source                                       |
-|------|--------------------------------------------|----------------------------------------------|
-| 1    | `src.ete_utils.get_all_descendant_taxids`  | Local ETE3 SQLite taxonomy DB                |
-| 2    | `db_builder.build_db.get_assemblies`       | `datasets summary genome taxon` CLI          |
-| 3    | `db_builder.build_db.get_annotations`      | `https://genome.crg.es/annotrieve/api/v0`    |
-| 4    | `db_builder.build_db.get_reads`            | `https://www.ebi.ac.uk/ena/portal/api/search`|
-| 5    | `db_builder.build_db.build_database`       | (writes `taxid_features` to SQLite)          |
-| 6    | `db_builder.precompute_aggregations`       | (rolls up to `precomputed_clade_features`)   |
+| Step | Module                                       | Source                                       |
+|------|----------------------------------------------|----------------------------------------------|
+| 1    | `src.ete_utils.get_all_descendant_taxids`    | Local ETE3 SQLite taxonomy DB                |
+| 2    | `db_builder.build_db.get_assemblies`         | `datasets summary genome taxon` CLI          |
+| 3    | `db_builder.build_db.get_annotations`        | `https://genome.crg.es/annotrieve/api/v0`    |
+| 4    | `db_builder.build_db.get_reads`              | `https://www.ebi.ac.uk/ena/portal/api/search`|
+| 5    | `db_builder.build_db.build_database`         | (writes `taxid_features` to SQLite)          |
+| 6    | `db_builder.precompute_aggregations`         | (rolls up to `precomputed_clade_features`)   |
+| 7    | `db_builder.precompute_taxa`                 | (caches common-clade taxa → `precomputed_taxa`) |
 
-The pipeline writes a dated file: `eukaryote_taxid_features_YYYY_MM_DD.db`.
-The workflow renames it to `eukaryotes.db`, then runs the separate
-`precompute_taxa.py` step to add the `precomputed_taxa` table.
+### Atomic output
+
+The pipeline writes to `eukaryote_taxid_features_YYYY_MM_DD.db.partial`
+while in progress, then `os.replace`-renames to
+`eukaryote_taxid_features_YYYY_MM_DD.db` on full success. If any step
+fails, the `.partial` file is left on disk for inspection and the
+workflow's `mv eukaryote_taxid_features_*.db` glob won't pick it up.
+
+Each step is wrapped in a decorator that converts any exception into a
+`PipelineError` tagged with the step number, so the top-level handler
+logs a clean failure summary and exits non-zero.
 
 ---
 
@@ -69,13 +75,19 @@ for the column-by-column reference.
 ```bash
 conda activate euka_refactored
 
-# Step 1–6: produces a dated DB file in CWD
+# All 7 steps including precompute_taxa. Produces a dated DB in CWD.
 python db_builder/pipeline_build_db.py
 
 # Rename to the static filename the app expects
 mv eukaryote_taxid_features_*.db eukaryotes.db
+```
 
-# Bake the UI common-clade lookup table
+You can also re-run just the precompute steps against an existing
+DB (useful after schema tweaks in `precompute_taxa.py` /
+`precompute_aggregations.py`):
+
+```bash
+python db_builder/precompute_aggregations.py --db eukaryotes.db
 python db_builder/precompute_taxa.py --db eukaryotes.db
 ```
 
@@ -140,13 +152,4 @@ The web app's first-launch download targets that `latest` release.
 
 ## Known issues (tracked in the audit)
 
-- **No per-step error handling.** A failing fetch silently produces a
-  degenerate DB; the smoke test added in step 6 above catches *some*
-  but not all degenerate outputs. Tracked as **H5** in
-  [REFACTORING_AUDIT.md](../REFACTORING_AUDIT.md).
-- **`precompute_aggregations` silently under-counts ancestors** when an
-  ETE3 lineage lookup fails. Tracked as **C4**.
-- **ENA `limit=0` loads the entire result set into memory.** For multi-
-  million-row responses this is a memory risk. Tracked as audit
-  Findings under `get_reads.py`.
 - **No incremental processing.** The whole DB is rebuilt monthly.

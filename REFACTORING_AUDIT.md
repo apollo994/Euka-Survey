@@ -293,14 +293,14 @@ app.py         # thin orchestrator
 - **C1.** ✅ *(2026-06-15)* Duplicated filter/sort/limit logic in `app.py` vs `database.py` — unified via `FilterLogic` enum + `filter_sort_limit_metadata` helper; parity verified.
 - **C2.** ✅ *(2026-06-15)* `app.py::generate_tree_svg_cached` calls `p.join()` without timeout. [`app.py:84`]
 - **C3.** ✅ *(2026-06-15)* `get_reads.py::_ena_search` swallows JSON decode errors → degenerate DB. [`get_reads.py:32-36`]
-- **C4.** `precompute_aggregations.py` silently under-counts ancestors when lineage lookups fail. [`precompute_aggregations.py:64-66`]
+- **C4.** ✅ *(2026-06-15)* `precompute_aggregations.py` silently under-counts ancestors when lineage lookups fail — missing-lineage rows are now SKIPPED instead of fake-attributed to self; warning logged with count.
 
 ### High
 - **H1.** ✅ *(2026-06-15)* No atomic write in `utils.ensure_database`. [`utils.py:8-16`]
 - **H2.** ✅ *(2026-06-15)* Race in `.tmp_bars` between concurrent users on Cloud — replaced with per-render `tempfile.TemporaryDirectory`; module globals dropped.
 - **H3.** ✅ *(2026-06-15)* `app.py` rank-resolution runs ETE3 on every rerun — moved to `taxonomy.resolve_valid_ranks` with `@lru_cache`.
 - **H4.** ⚠️ *Partial (2026-06-15)* — lookup `lru_cache` in place; full singleton blocked by Streamlit thread-affinity.
-- **H5.** Pipeline lacks per-step error handling and atomic output.
+- **H5.** ✅ *(2026-06-15)* Pipeline lacks per-step error handling and atomic output — `@_step` decorator + `PipelineError` + `.partial` → `os.replace` rename on success.
 - **H6.** ✅ *(2026-06-15)* Workflow has no DB-validation gate before publishing.
 - **H7.** No tests at all.
 
@@ -311,7 +311,7 @@ app.py         # thin orchestrator
 - **M4.** Magic numbers scattered.
 - **M5.** ✅ *(2026-06-15)* Common-taxa list duplicated.
 - **M6.** ⊘ *(2026-06-15)* `get_taxa_at_rank` slow for large clades — investigated, rejected: CTE rewrite is slower (no parent index in ETE3 SQLite); original retained with explanatory comment.
-- **M7.** `precompute_aggregations` loads 1.8M lineages in one call.
+- **M7.** ✅ *(2026-06-15)* `precompute_aggregations` loads 1.8M lineages in one call — chunked at 50k.
 - **M8.** ✅ *(2026-06-15)* `get_assemblies` uses `sys.exit(1)` instead of raising.
 - **M9.** ✅ *(2026-06-15)* `pyvirtualdisplay` ImportError silently swallowed — broader `(FileNotFoundError, OSError)` catch + fallback to `QT_QPA_PLATFORM=offscreen`.
 - **M10.** ✅ *(2026-06-15)* No structured logging in `db_builder/`.
@@ -357,9 +357,9 @@ app.py         # thin orchestrator
 21. ✅ Use `tempfile.TemporaryDirectory()` per render in `visualization.render_tree_in_process`; drop globals.
 22. ✅ Pin matplotlib backend to Agg at start of `render_tree_in_process`.
 23. ✅ Batch lineage lookup in `render_tree_in_process`.
-24. ⏳ Chunk `get_lineage_translator` calls in `precompute_aggregations.py` (50k chunks).
-25. ⏳ Stream ENA reads via `iter_lines()` or paginate.
-26. ⏳ Per-step try/except in `pipeline_build_db.py`; `.partial` + rename. Call `precompute_taxa.precompute_common_clades` from the pipeline.
+24. ✅ Chunk `get_lineage_translator` calls in `precompute_aggregations.py` (50k chunks).
+25. ✅ Stream ENA reads via `iter_lines()` (TSV format).
+26. ✅ Per-step try/except in `pipeline_build_db.py`; `.partial` + rename. Call `precompute_taxa.precompute_common_clades` from the pipeline.
 27. ✅ Replace `sys.exit(1)` in `get_assemblies` with `raise RuntimeError(...)`. *(Pulled forward in Batch 2.)*
 28. ⏳ Move all `@st.cache_*` wrappers into `src/cache.py`.
 

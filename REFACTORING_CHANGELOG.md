@@ -362,8 +362,85 @@ taxa now produces a valid 97 KB SVG in 1.6 s with no Xvfb installed.
   nodes ETE3 may surface as leaves don't crash the layout function
   (defensive — addresses an edge case flagged in the audit findings).
 
+## 2026-06-15 — Batch 5: Phase 2 — db_builder reliability
+
+### db_builder/precompute_aggregations.py
+
+**Audit C4 / Roadmap Phase 2 #24 — Fix silent under-counting + chunk lineage lookups**
+
+Two Critical-rank issues closed:
+
+1. **The silent under-counting bug**: when ETE3 had no lineage for a
+   leaf species, the code used `lineage = [taxid]` as a fallback. That
+   attributed the species' counts only to itself, silently *omitting*
+   it from every ancestor's roll-up. Aggregates at order/class/phylum
+   level were therefore systematically under-counted by the missing-
+   lineage population.
+   Now: missing-lineage rows are SKIPPED (not faked) and a warning is
+   logged with the count. Roll-up arithmetic is internally consistent
+   even if we cannot place a species in the tree.
+
+2. **Memory bound on lineage lookups**: previously a single
+   `ncbi.get_lineage_translator(all_taxids)` call on ~1.8 M species
+   built a dict-of-lists in RAM. Now chunked at 50 000 taxids per
+   call; the same chunking is applied to `ncbi.get_rank` (also called
+   on the full taxid list previously).
+
+### db_builder/build_db/get_reads.py
+
+**Roadmap Phase 2 #25 — Stream ENA reads via TSV + iter_lines**
+
+The ENA query used `format=json` with `limit=0`, then loaded the
+entire response with `r.json()` — a memory bomb for multi-million-row
+responses. The `stream=True` flag was set on the request but had no
+effect because `json()` materializes everything anyway.
+
+- Switched to `format=tsv` so the response is line-oriented.
+- Parse incrementally via `requests.iter_lines(decode_unicode=True)`.
+  Header parsed once; subsequent rows are split + counted directly
+  into the long-read / short-read taxid dicts. No intermediate
+  list-of-records held in memory.
+- Header validation: if ENA returns an unexpected column order we
+  raise (and tenacity retries).
+- Empty response is now a hard failure (was previously an empty
+  dict + count=0 — same class of degenerate-output bug as the
+  swallowed JSON error fixed in Batch 2).
+
+### db_builder/pipeline_build_db.py
+
+**Audit H5 / Roadmap Phase 2 #26 — Per-step error handling + atomic output + bake precompute_taxa**
+
+Top-level pipeline is now structured:
+
+- Each step is a `@_step(num, label)`-decorated function. The decorator
+  logs the header and wraps any exception in `PipelineError(...)` with
+  the step number, so the top-level handler can produce a clean error
+  summary instead of an opaque stack trace mid-pipeline.
+- Output is written to `eukaryote_taxid_features_YYYY_MM_DD.db.partial`
+  while in progress. On full success the file is `os.replace`-renamed
+  to `eukaryote_taxid_features_YYYY_MM_DD.db` (atomic on POSIX). On
+  any step failure, the `.partial` file is left on disk for inspection
+  and the workflow's `mv eukaryote_taxid_features_*.db` glob won't
+  pick it up. Stale `.partial` files from prior failed runs are
+  removed at the top of `main()`.
+- `precompute_common_clades` is now invoked as step 7 of the pipeline
+  (was previously only called from the GitHub workflow as a separate
+  script). The pipeline now produces a complete, ready-to-serve DB.
+- `main()` returns an exit code; the script exits with `sys.exit(main())`
+  so CI sees a non-zero exit on partial failure.
+- Step count updated to `[1/7]`–`[7/7]`.
+
+### .github/workflows/update_db.yml
+
+- Dropped the separate `python db_builder/precompute_taxa.py --db eukaryotes.db`
+  step now that the pipeline does it. The smoke test added in Batch 2
+  already validates the `precomputed_taxa` table.
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;
   needs a thread-local accessor, not a naive module global. The
   `lru_cache`-on-lookups gives most of the wins safely in the interim.
+- **Phase 2 #28 (caches → src/cache.py)** — straightforward but
+  depends on the app.py UI split planned in Phase 3, so deferred
+  there to avoid churn.
