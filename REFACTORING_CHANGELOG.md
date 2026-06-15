@@ -138,13 +138,77 @@ change (if any), and why.
 - "patch missing zero-count taxonomic entries" referred to a step deleted in
   commit `bfbf5fe`. Removed from the offline-pipeline description.
 
-## Items intentionally deferred from this batch
+## 2026-06-15 — Batch 2: Remaining Phase 1 items
 
-- **Phase 1 #11 (pin env.yml + drop pandas/scipy)** — confirmed `pandas`/`scipy`
-  unused via grep, but env-file changes deserve their own commit + smoke run.
-- **Phase 1 #12 (`print` → `logging` in `db_builder/`)** — touches every script,
-  prefer to do it once standalone.
-- **Phase 1 #14 (workflow smoke-test step)** — workflow change, separate concern.
+### environment.yml
+
+**Roadmap Phase 1 #11**
+- Removed `scipy` and `pandas` (confirmed unused via repo-wide grep).
+- Added missing `tenacity` (was being imported by `get_annotations.py` and
+  `get_reads.py` but never declared — relied on a transitive install).
+- Added a comment explaining the `numpy<2.0.0` pin (ete3/matplotlib ABI).
+
+### db_builder/ — `print` → `logging`
+
+**Roadmap Phase 1 #12**
+- All 43 `print()` calls in `pipeline_build_db.py`, `precompute_aggregations.py`,
+  `precompute_taxa.py`, `get_assemblies.py`, `get_reads.py`, and
+  `get_annotations.py` converted to module-level `logging.getLogger("euka.…")`.
+- Entry-point scripts (`__main__` blocks) configure `logging.basicConfig` with
+  a timestamped format.
+- `[WARNING]` prefix in pipeline_build_db.py → proper `log.warning()` (the
+  message no longer requires the manual prefix).
+
+### db_builder/build_db/get_assemblies.py
+
+**Audit M8 / Roadmap Phase 2 #27 — `sys.exit(1)` → `raise`**
+- Introduced `DatasetsCLIError(RuntimeError)`.
+- Both error paths (CLI not installed; non-zero exit from `datasets`) now
+  raise instead of `sys.exit(1)`. Library hygiene fix — the pipeline can now
+  catch and decide how to handle the failure rather than the process dying
+  inside a library call.
+- Pulled forward from Phase 2 because the lines were already being touched
+  by the print→logging conversion.
+
+### db_builder/build_db/get_reads.py
+
+**Audit C3 — Swallowed JSON decode error fixed**
+- `r.json()` failure used to log to stdout and return empty dicts +
+  `count=0`. This is a Critical-rank audit finding: it would silently produce
+  a degenerate DB on a transient ENA outage.
+- Now re-raises so `@tenacity.retry` can take over; if all 5 retries are
+  exhausted, the failure propagates and the pipeline aborts loudly instead of
+  publishing a broken DB.
+- Also collapsed the redundant `_ena_search` + `fetch_ena_reads` no-op
+  wrapper (Audit M.6 cleanup).
+
+### .github/workflows/update_db.yml
+
+**Audit H6 / Roadmap Phase 1 #14 — DB smoke test added**
+- Inserted a "Smoke-test produced DB" step between the build and the publish
+  steps. The test:
+  - Checks `eukaryotes.db` is at least 50 MB (full DB is ~300 MB).
+  - Opens the DB read-only.
+  - Verifies each of the three expected tables (`taxid_features`,
+    `precomputed_clade_features`, `precomputed_taxa`) has at least a sane
+    minimum row count.
+  - Workflow fails before publishing if any check fails — no more stale or
+    broken releases overwriting `latest`.
+- Also hardened the `mv eukaryote_taxid_features_*.db eukaryotes.db` step to
+  fail if multiple matches exist (could happen if a prior run left an
+  artifact).
+
+### src/ete_utils.py
+
+**Audit L3 — Lookup-function error contracts aligned**
+- `get_name_from_taxid` used to raise `ValueError` on non-int input while the
+  sibling `get_rank_from_taxid` silently returned `"clade"`.
+- Both now return their respective sentinel (`"Unknown"` / `"clade"`) on
+  non-int input. The only caller (`app.py`) already treats `"Unknown"` as the
+  error sentinel.
+
+## Items still intentionally deferred
+
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;
   needs a thread-local accessor, not a naive module global. The
-  `lru_cache`-on-lookups above gives most of the wins safely in the interim.
+  `lru_cache`-on-lookups gives most of the wins safely in the interim.

@@ -291,17 +291,17 @@ app.py         # thin orchestrator
 
 ### Critical
 - **C1.** Duplicated filter/sort/limit logic in `app.py` vs `database.py`. [`app.py:432-462`, `src/database.py:88-147`]
-- **C2.** `app.py::generate_tree_svg_cached` calls `p.join()` without timeout. [`app.py:84`]
-- **C3.** `get_reads.py::_ena_search` swallows JSON decode errors → degenerate DB. [`get_reads.py:32-36`]
+- **C2.** ✅ *(2026-06-15)* `app.py::generate_tree_svg_cached` calls `p.join()` without timeout. [`app.py:84`]
+- **C3.** ✅ *(2026-06-15)* `get_reads.py::_ena_search` swallows JSON decode errors → degenerate DB. [`get_reads.py:32-36`]
 - **C4.** `precompute_aggregations.py` silently under-counts ancestors when lineage lookups fail. [`precompute_aggregations.py:64-66`]
 
 ### High
-- **H1.** No atomic write in `utils.ensure_database`. [`utils.py:8-16`]
+- **H1.** ✅ *(2026-06-15)* No atomic write in `utils.ensure_database`. [`utils.py:8-16`]
 - **H2.** Race in `.tmp_bars` between concurrent users on Cloud. [`visualization.py:29-32`, `:60`]
 - **H3.** `app.py` rank-resolution runs ETE3 on every rerun. [`app.py:178-202`]
-- **H4.** 5+ `NCBITaxa()` instantiations per render across the codebase.
+- **H4.** ⚠️ *Partial (2026-06-15)* — lookup `lru_cache` in place; full singleton blocked by Streamlit thread-affinity.
 - **H5.** Pipeline lacks per-step error handling and atomic output.
-- **H6.** Workflow has no DB-validation gate before publishing.
+- **H6.** ✅ *(2026-06-15)* Workflow has no DB-validation gate before publishing.
 - **H7.** No tests at all.
 
 ### Medium
@@ -309,21 +309,21 @@ app.py         # thin orchestrator
 - **M2.** Duplicate row→dict construction in `database.py`.
 - **M3.** Dict-of-dicts metadata stringly-typed.
 - **M4.** Magic numbers scattered.
-- **M5.** Common-taxa list duplicated.
+- **M5.** ✅ *(2026-06-15)* Common-taxa list duplicated.
 - **M6.** `get_taxa_at_rank` slow for large clades.
 - **M7.** `precompute_aggregations` loads 1.8M lineages in one call.
-- **M8.** `get_assemblies` uses `sys.exit(1)` instead of raising.
+- **M8.** ✅ *(2026-06-15)* `get_assemblies` uses `sys.exit(1)` instead of raising.
 - **M9.** `pyvirtualdisplay` ImportError silently swallowed.
-- **M10.** No structured logging in `db_builder/`.
+- **M10.** ✅ *(2026-06-15)* No structured logging in `db_builder/`.
 
 ### Low
-- **L1.** Dead imports (`from ete3 import NCBITaxa` in `app.py`; `import re` in `visualization.py`).
-- **L2.** `dict.keys()` usage in `pipeline_build_db.py:53`.
-- **L3.** Inconsistent error contracts in `ete_utils.py`.
-- **L4.** README inaccuracy about "patch missing zero-count taxonomic entries".
+- **L1.** ✅ *(2026-06-15)* Dead imports (`from ete3 import NCBITaxa` in `app.py`; `import re` in `visualization.py`).
+- **L2.** ✅ *(2026-06-15)* `dict.keys()` usage in `pipeline_build_db.py:53`.
+- **L3.** ✅ *(2026-06-15)* Inconsistent error contracts in `ete_utils.py`.
+- **L4.** ✅ *(2026-06-15)* README inaccuracy about "patch missing zero-count taxonomic entries".
 - **L5.** `__main__` smoke-tests in `db_builder/build_db/*.py` aren't real entry points.
-- **L6.** Unused deps (`pandas`, possibly `scipy`) in `environment.yml`.
-- **L7.** Pipeline step-counter mismatch.
+- **L6.** ✅ *(2026-06-15)* Unused deps (`pandas`, possibly `scipy`) in `environment.yml`.
+- **L7.** ✅ *(2026-06-15)* Pipeline step-counter mismatch.
 
 ---
 
@@ -341,10 +341,10 @@ app.py         # thin orchestrator
 8. ✅ `@functools.lru_cache` on `get_name_from_taxid` and `get_rank_from_taxid`.
 9. ✅ Use `mode=ro` URI for ETE3 SQLite in `get_all_descendant_taxids`.
 10. ✅ Update README.md (remove stale "patch missing zero-count" line).
-11. ⏳ Pin remaining libs in `environment.yml`; remove unused (`pandas`, `scipy` if confirmed). *(Confirmed unused, deferred to its own commit.)*
-12. ⏳ Switch `db_builder/` `print` to `logging` with `basicConfig(level=INFO)`. *(Deferred — touches every script.)*
+11. ✅ Drop unused `pandas`/`scipy` from `environment.yml`, add missing `tenacity`, document the `numpy<2.0` pin.
+12. ✅ Switch `db_builder/` `print` to `logging` with `basicConfig(level=INFO)`.
 13. ✅ Add `closing(...)` to `precompute_taxa.py` and `precompute_aggregations.py`.
-14. ⏳ Add DB-smoke-test step to the workflow (open DB, count rows, fail if zero). *(Deferred — workflow change.)*
+14. ✅ Add DB-smoke-test step to the workflow (size + per-table row counts).
 
 ### Phase 2 — Medium-effort improvements
 

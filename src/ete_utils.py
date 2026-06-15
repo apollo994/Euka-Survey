@@ -14,22 +14,20 @@ from ete3 import NCBITaxa
 
 @lru_cache(maxsize=4096)
 def get_name_from_taxid(taxid: int) -> str:
-    """Get the scientific name for a given taxonomic ID."""
-    if taxid is None or not isinstance(taxid, int):
-        raise ValueError("Invalid taxid provided. Must be a non-null integer.")
+    """Get the scientific name for a given taxonomic ID, or "Unknown"."""
+    if not isinstance(taxid, int):
+        return "Unknown"
     ncbi = NCBITaxa()
-    names = ncbi.get_taxid_translator([taxid])
-    return names.get(taxid, "Unknown")
+    return ncbi.get_taxid_translator([taxid]).get(taxid, "Unknown")
 
 
 @lru_cache(maxsize=4096)
 def get_rank_from_taxid(taxid: int) -> str:
-    """Get the taxonomic rank for a given taxonomic ID."""
-    if taxid is None or not isinstance(taxid, int):
+    """Get the taxonomic rank for a given taxonomic ID, or "clade"."""
+    if not isinstance(taxid, int):
         return "clade"
     ncbi = NCBITaxa()
-    ranks = ncbi.get_rank([taxid])
-    return ranks.get(taxid, "clade")
+    return ncbi.get_rank([taxid]).get(taxid, "clade")
 
 
 def get_all_descendant_taxids(parent_taxid: int) -> set[int]:

@@ -1,3 +1,4 @@
+import logging
 import sqlite3
 import time
 from collections import defaultdict
@@ -6,13 +7,15 @@ from pathlib import Path
 
 from ete3 import NCBITaxa
 
+log = logging.getLogger("euka.precompute_aggregations")
+
 
 def precompute_clades(db_path: Path):
     """
     Reads the leaf-level 'taxid_features' table, calculates the aggregations
     for every ancestral clade, and creates a fast precomputed table.
     """
-    print(f"Connecting to database: {db_path}")
+    log.info("Connecting to database: %s", db_path)
     with closing(sqlite3.connect(db_path)) as conn:
         _precompute_clades_impl(conn)
 
@@ -20,35 +23,36 @@ def precompute_clades(db_path: Path):
 def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
     ncbi = NCBITaxa()
 
-    # Get all leaf features
     cursor = conn.cursor()
-    cursor.execute("SELECT taxid, short_read_count, long_read_count, assembly_count, annotation_count FROM taxid_features")
+    cursor.execute(
+        "SELECT taxid, short_read_count, long_read_count, assembly_count, annotation_count "
+        "FROM taxid_features"
+    )
     leaf_rows = cursor.fetchall()
-    print(f"Loaded {len(leaf_rows)} leaf rows with features.")
+    log.info("Loaded %d leaf rows with features.", len(leaf_rows))
 
-    print("Filtering to only include 'species' rank...")
+    log.info("Filtering to only include 'species' rank...")
     all_raw_taxids = [row[0] for row in leaf_rows]
     try:
-         ranks = ncbi.get_rank(all_raw_taxids)
+        ranks = ncbi.get_rank(all_raw_taxids)
     except Exception:
-         ranks = {}
-    
-    leaf_rows = [row for row in leaf_rows if ranks.get(row[0]) == 'species']
-    print(f"Kept {len(leaf_rows)} species-rank rows after filtering.")
+        ranks = {}
+
+    leaf_rows = [row for row in leaf_rows if ranks.get(row[0]) == "species"]
+    log.info("Kept %d species-rank rows after filtering.", len(leaf_rows))
 
     # Dictionary to hold the aggregations for each ancestor
     # Structure: clade_taxid -> {'n_rows', 'c_ass', 'c_ann', 'c_rna', 'c_lng', 's_ass', 's_ann', 's_rna', 's_lng'}
     clade_aggs = defaultdict(lambda: {
         'n_rows': 0, 'c_ass': 0, 'c_ann': 0, 'c_rna': 0, 'c_lng': 0,
-        's_ass': 0, 's_ann': 0, 's_rna': 0, 's_lng': 0
+        's_ass': 0, 's_ann': 0, 's_rna': 0, 's_lng': 0,
     })
 
-    print("Rolling up lineages (this will take a moment)...")
+    log.info("Rolling up lineages (this will take a moment)...")
     start_time = time.time()
-    
-    # We want to do a fast lookup of lineages in batch
+
     all_taxids = [row[0] for row in leaf_rows]
-    
+
     # ETE3 generates warnings for taxids not found, we handle gracefully.
     try:
         lineages = ncbi.get_lineage_translator(all_taxids)
@@ -61,7 +65,6 @@ def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
         taxid = row[0]
         s_short, s_long, s_ass, s_ann = row[1], row[2], row[3], row[4]
 
-        # Booleans for organism counts
         has_ass = 1 if s_ass > 0 else 0
         has_ann = 1 if s_ann > 0 else 0
         has_rna = 1 if (s_short > 0 or s_long > 0) else 0
@@ -70,9 +73,8 @@ def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
         lineage = lineages.get(taxid, [])
         if not lineage:
             missing_lineages += 1
-            lineage = [taxid] # fallback to just itself
+            lineage = [taxid]  # fallback to just itself
 
-        # Add these leaf counts to every ancestor in the lineage
         for ancestor in lineage:
             agg = clade_aggs[ancestor]
             agg['n_rows'] += 1
@@ -80,19 +82,23 @@ def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
             agg['c_ann'] += has_ann
             agg['c_rna'] += has_rna
             agg['c_lng'] += has_lng
-            
             agg['s_ass'] += s_ass
             agg['s_ann'] += s_ann
             agg['s_rna'] += s_short + s_long
             agg['s_lng'] += s_long
 
     if missing_lineages > 0:
-        print(f"Warning: {missing_lineages} taxids had no valid taxonomy lineage in ete3 and were skipped.")
+        log.warning(
+            "%d taxids had no valid taxonomy lineage in ete3 and contributed only to themselves.",
+            missing_lineages,
+        )
 
-    print(f"Precomputed {len(clade_aggs)} distinct clade nodes in {time.time() - start_time:.2f} seconds.")
+    log.info(
+        "Precomputed %d distinct clade nodes in %.2f seconds.",
+        len(clade_aggs), time.time() - start_time,
+    )
 
-    print("Writing to precomputed_clade_features table...")
-    # Create the optimized table
+    log.info("Writing to precomputed_clade_features table...")
     conn.execute("DROP TABLE IF EXISTS precomputed_clade_features")
     conn.execute("""
         CREATE TABLE precomputed_clade_features (
@@ -110,21 +116,28 @@ def _precompute_clades_impl(conn: sqlite3.Connection) -> None:
     """)
 
     insert_rows = [
-        (tid, a['n_rows'], a['c_ass'], a['c_ann'], a['c_rna'], a['c_lng'], a['s_ass'], a['s_ann'], a['s_rna'], a['s_lng'])
+        (tid, a['n_rows'], a['c_ass'], a['c_ann'], a['c_rna'], a['c_lng'],
+         a['s_ass'], a['s_ann'], a['s_rna'], a['s_lng'])
         for tid, a in clade_aggs.items()
     ]
 
     conn.executemany("""
-        INSERT INTO precomputed_clade_features 
+        INSERT INTO precomputed_clade_features
         (taxid, n_rows, c_ass, c_ann, c_rna, c_lng, s_ass, s_ann, s_rna, s_lng)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, insert_rows)
 
     conn.commit()
-    print("Done! Database is now optimized for the web.")
+    log.info("Done! Database is now optimized for the web.")
+
 
 if __name__ == "__main__":
     import argparse
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
     parser = argparse.ArgumentParser(description="Precompute clade feature aggregations.")
     parser.add_argument("--db", required=True, help="Path to your eukaryotes.db file.")
     args = parser.parse_args()
