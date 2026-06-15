@@ -1,269 +1,204 @@
 #!/usr/bin/env python3
+"""ETE3 phylogenetic tree rendering with per-leaf divergent bar charts.
+
+This module is imported and re-imported in spawned child processes (see
+`app.py::generate_tree_svg_cached`). All matplotlib output is rendered
+into a per-render temporary directory passed down through the helpers
+— there are no module-level path globals or shared `.tmp_bars/`
+directory, so concurrent renders cannot stomp on each other's files.
+
+The matplotlib backend is pinned to Agg at import time so the same
+import works in:
+
+- The headless Qt-render subprocess (the child must not pick a Qt
+  backend or it conflicts with ETE3's QApplication).
+- The Streamlit parent process (which never uses pyplot directly).
+"""
+
+import logging
 import os
-import re
-import shutil
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from ete3 import NCBITaxa, TreeStyle, TextFace, ImgFace, NodeStyle
 
-def render_tree_in_process(phylum_metadata, include_counts, out_svg):
-    """
-    ETE3 requires PyQt5 to render trees. PyQt5 STRICTLY requires its QApplication
-    to be created in the main thread of a process. Since Streamlit runs user code
-    in worker threads, we must launch a separate process to render the tree.
-    """
-    # Initialize virtual display for headless environments (Streamlit Cloud)
-    try:
-        from pyvirtualdisplay import Display
-        display = Display(visible=False, size=(1200, 1000))
-        display.start()
-    except ImportError:
-        display = None
+# Pin matplotlib backend BEFORE pyplot is imported. Must remain above
+# `import matplotlib.pyplot as plt`.
+import matplotlib
 
-    # Importing visualization functions here to ensure they run in the child process
-    import src.visualization as visualization
-    from ete3 import NCBITaxa
-    import os
-    import shutil
+matplotlib.use("Agg")
 
-    # Refresh phylo temp directory exclusively for this process
-    if os.path.exists(visualization.TMP_DIR):
-        shutil.rmtree(visualization.TMP_DIR)
-    os.makedirs(visualization.TMP_DIR)
+import matplotlib.patches as mpatches  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+from ete3 import ImgFace, TextFace, TreeStyle  # noqa: E402
 
-    ncbi = NCBITaxa()
-    
-    # Filter valid taxids that exist in local ETE3 database
-    valid_taxids = []
-    for tid in phylum_metadata.keys():
-        try:
-            ncbi.get_lineage(tid)
-            valid_taxids.append(tid)
-        except ValueError:
-            pass
-            
-    if not valid_taxids:
-        if display:
-            display.stop()
-        return
+from src.ete_utils import get_ncbi  # noqa: E402
+from src.metrics import CladeMetadata, METRICS, Metric  # noqa: E402
 
-    layout_fn = visualization.create_layout_fn(ncbi, phylum_metadata, include_counts)
-    ts = visualization.configure_tree_style(layout_fn, include_counts)
-    
-    tree = ncbi.get_topology(valid_taxids)
-    tree.render(out_svg, w=1200, units="px", tree_style=ts)
+log = logging.getLogger("euka.visualization")
 
-    if display:
-        display.stop()
-
-# ── Constants ────────────────────────────────────────────────────────────────
-TMP_DIR   = ".tmp_bars"
-
-# Paired ColorBrewer palette
-C_ASS_LIGHT = "#a6cee3"   # Assemblies    (light blue)
-C_ANN_DARK  = "#1f78b4"   # Annotations   (dark  blue)
-C_RNA_LIGHT = "#b2df8a"   # Any RNA-Seq   (light green)
-C_LNG_DARK  = "#33a02c"   # Long-Read RNA (dark  green)
+# Per-side light/dark lookup so the legend can name the four corners of
+# the divergent bar chart without re-hardcoding the metric keys.
+_BY_SIDE_AND_OVERLAY: dict[tuple[str, bool], Metric] = {
+    (m.side, m.overlay): m for m in METRICS
+}
 
 # Shared bar-chart geometry
-BAR_FIG_W   = 4.0         # inches  → 400 px at 100 dpi
-BAR_FIG_H   = 0.2         # inches  → 55  px  (was 0.30)
-BAR_DPI     = 100         # 100
-BAR_HEIGHT  = 1.0         # fraction of y-axis height (0.55)
+BAR_FIG_W   = 4.0
+BAR_FIG_H   = 0.2
+BAR_DPI     = 100
+BAR_HEIGHT  = 1.0
 GRID_TICKS  = [25, 50, 75, 100]
 GRID_COLOR  = "#d4d4d4"
 SPINE_COLOR = "#555555"
 
-# Cache for images that are rendered only once
-_AXIS_IMG_PATH  = None
-_LEGEND_IMG_PATH = None
 
-
-# ── Data loading ──────────
-
-
-# ── Bar chart helpers ────────────────────────────────────────────────────────
-def _apply_shared_axes(ax):
-    """Apply grid lines, center spine and cosmetics shared by every bar row."""
-    # Subtle vertical grid at ±25 / ±50 / ±75
+# ── Bar-chart helpers ────────────────────────────────────────────────
+def _apply_shared_axes(ax) -> None:
+    """Grid lines, centre spine, and cosmetics shared by every bar row."""
     for x in GRID_TICKS:
-        ax.axvline( x, color=GRID_COLOR, linewidth=0.6, zorder=0)
+        ax.axvline(x, color=GRID_COLOR, linewidth=0.6, zorder=0)
         ax.axvline(-x, color=GRID_COLOR, linewidth=0.6, zorder=0)
-
-    # Center spine
-    ax.axvline(0, color=SPINE_COLOR, linewidth=0.6, linestyle='--', zorder=4)
-
-    ax.set_xlim(-105, 105) # +-100
-    ax.set_ylim(-0.5,  0.5)
+    ax.axvline(0, color=SPINE_COLOR, linewidth=0.6, linestyle="--", zorder=4)
+    ax.set_xlim(-105, 105)
+    ax.set_ylim(-0.5, 0.5)
 
 
-def generate_bar_chart(taxid, meta):
-    """
-    Horizontal divergent bar for a single taxon.
+def generate_bar_chart(taxid: int, meta: CladeMetadata, tmp_dir: str) -> str:
+    """Horizontal divergent bar for a single taxon, saved as a PNG.
 
-    Left  (negative x): Assemblies (light) with Annotations overlaid (dark).
-    Right (positive x): Any RNA-Seq (light) with Long-Read overlaid (dark).
-
-    The dark bar is always ≤ the light bar (enforced in load_data), so the
-    darker colour represents the *annotated / long-read fraction* of the
-    lighter bar — visually a "filled subset" effect.
+    Left half (negative x): the two `side="left"` metrics — light base
+    bar with the overlay metric drawn on top. Right half mirrors it for
+    the `side="right"` metrics. Light bars sit at zorder 2, dark overlays
+    at zorder 3 so the darker metric stays visible when both are non-zero.
     """
     fig, ax = plt.subplots(figsize=(BAR_FIG_W, BAR_FIG_H), dpi=BAR_DPI)
     _apply_shared_axes(ax)
 
-    kw = dict(height=BAR_HEIGHT, align='center',
-              edgecolor='white', linewidth=0.4)
+    kw = dict(height=BAR_HEIGHT, align="center", edgecolor="white", linewidth=0.4)
+    for m in METRICS:
+        direction = -1 if m.side == "left" else 1
+        zorder = 3 if m.overlay else 2
+        ax.barh(0, direction * meta.percent(m.key), color=m.color, zorder=zorder, **kw)
 
-    # Left side ────────────────────────────────────────────────────────────
-    ax.barh(0, -meta['p_ass'], color=C_ASS_LIGHT, zorder=2, **kw)
-    ax.barh(0, -meta['p_ann'], color=C_ANN_DARK,  zorder=3, **kw)
-
-    # Right side ───────────────────────────────────────────────────────────
-    ax.barh(0, meta['p_rna'], color=C_RNA_LIGHT, zorder=2, **kw)
-    ax.barh(0, meta['p_lng'], color=C_LNG_DARK,  zorder=3, **kw)
-
-    ax.axis('off')
+    ax.axis("off")
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
 
-    out_path = os.path.join(TMP_DIR, f"{taxid}.png")
+    out_path = os.path.join(tmp_dir, f"{taxid}.png")
     fig.savefig(out_path, transparent=True, pad_inches=0)
     plt.close(fig)
     return out_path
 
 
-def generate_axis_img():
-    """
-    Axis ruler rendered once and reused.
-
-    Draws a full-width baseline with tick marks at 0, ±25, ±50, ±75, ±100
-    and labels at 0, ±50, ±100 to keep it uncluttered.
-    """
-    global _AXIS_IMG_PATH
-    if _AXIS_IMG_PATH is not None:
-        return _AXIS_IMG_PATH
-
+def generate_axis_img(tmp_dir: str) -> str:
+    """Axis ruler — drawn once per render into `tmp_dir`."""
     fig, ax = plt.subplots(figsize=(BAR_FIG_W, 0.30), dpi=BAR_DPI)
-    ax.set_xlim(-105, 105) # +-100, changed to 105 to avoid clipping of the outermost ticks
+    ax.set_xlim(-105, 105)
     ax.set_ylim(0, 1)
-    ax.axis('off')
+    ax.axis("off")
 
-    # Baseline (drawn in data coords: y=0.95 across full x range)
     ax.plot([-100, 100], [0.95, 0.95], color=SPINE_COLOR, linewidth=0.8)
 
     def _tick(x, major=False):
-        h  = 0.55 if major else 0.35
-        # Draw tick downward from the baseline using data coordinates
-        ax.plot([x, x], [0.95, 0.95 - h],
-                color=SPINE_COLOR,
+        h = 0.55 if major else 0.35
+        ax.plot([x, x], [0.95, 0.95 - h], color=SPINE_COLOR,
                 linewidth=(1.0 if major else 0.6))
 
     labeled = {-100: "1", -50: "0.5", 0: "0", 50: "0.5", 100: "1"}
     for x in [-100, -75, -50, -25, 0, 25, 50, 75, 100]:
         _tick(x, major=(x in labeled))
         if x in labeled:
-            ax.text(x, 0.25, labeled[x],
-                    va='top', ha='center', fontsize=8,
-                    fontfamily='sans-serif', color='#333333')
+            ax.text(x, 0.25, labeled[x], va="top", ha="center",
+                    fontsize=8, fontfamily="sans-serif", color="#333333")
 
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    out_path = os.path.join(TMP_DIR, "axis.png")
+    out_path = os.path.join(tmp_dir, "axis.png")
     fig.savefig(out_path, transparent=True, pad_inches=0)
     plt.close(fig)
-    _AXIS_IMG_PATH = out_path
     return out_path
 
 
-def generate_legend_img():
-    """
-    Compact two-row legend rendered once and reused.
-
-    Row 1 (blue)  – left/assembly side
-    Row 2 (green) – right/RNA side
-    """
-    global _LEGEND_IMG_PATH
-    if _LEGEND_IMG_PATH is not None:
-        return _LEGEND_IMG_PATH
-
+def generate_legend_img(tmp_dir: str) -> str:
+    """Compact two-row legend — drawn once per render into `tmp_dir`."""
     fig, ax = plt.subplots(figsize=(BAR_FIG_W, 0.55), dpi=BAR_DPI)
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
-    ax.axis('off')
+    ax.axis("off")
 
     swatch_w, swatch_h = 0.06, 0.28
-    gap                = 0.02
-    label_kw = dict(va='center', fontsize=9, fontfamily='sans-serif', color='#222222')
+    gap = 0.02
+    label_kw = dict(va="center", fontsize=9, fontfamily="sans-serif", color="#222222")
 
     def _row(y_center, c_light, c_dark, label_left, label_right):
-        y0   = y_center - swatch_h / 2
-        # Light swatch
+        y0 = y_center - swatch_h / 2
         x0_l = 0.5 - swatch_w - gap / 2
         ax.add_patch(mpatches.FancyBboxPatch(
-            (x0_l, y0), swatch_w, swatch_h,
-            boxstyle="round,pad=0.01",
-            facecolor=c_light, edgecolor='white', linewidth=0.5))
-        ax.text(x0_l - gap, y_center, label_left,
-                ha='right', **label_kw)
-        # Dark swatch
+            (x0_l, y0), swatch_w, swatch_h, boxstyle="round,pad=0.01",
+            facecolor=c_light, edgecolor="white", linewidth=0.5))
+        ax.text(x0_l - gap, y_center, label_left, ha="right", **label_kw)
         x0_d = 0.5 + gap / 2
         ax.add_patch(mpatches.FancyBboxPatch(
-            (x0_d, y0), swatch_w, swatch_h,
-            boxstyle="round,pad=0.01",
-            facecolor=c_dark, edgecolor='white', linewidth=0.5))
-        ax.text(x0_d + swatch_w + gap, y_center, label_right,
-                ha='left', **label_kw)
+            (x0_d, y0), swatch_w, swatch_h, boxstyle="round,pad=0.01",
+            facecolor=c_dark, edgecolor="white", linewidth=0.5))
+        ax.text(x0_d + swatch_w + gap, y_center, label_right, ha="left", **label_kw)
 
-    _row(0.72, C_ASS_LIGHT, C_RNA_LIGHT,  "Assembled",  "RNA-Seq (Any)")
-    _row(0.25, C_ANN_DARK, C_LNG_DARK,  "Annotated", "Long-Read RNA")
+    # Top row pairs the two light (non-overlay) metrics; bottom row pairs
+    # the two dark (overlay) metrics. Both rows go left-side → right-side.
+    light_left  = _BY_SIDE_AND_OVERLAY[("left", False)]
+    light_right = _BY_SIDE_AND_OVERLAY[("right", False)]
+    dark_left   = _BY_SIDE_AND_OVERLAY[("left", True)]
+    dark_right  = _BY_SIDE_AND_OVERLAY[("right", True)]
+    _row(0.72, light_left.color, light_right.color, light_left.legend_label, light_right.legend_label)
+    _row(0.25, dark_left.color,  dark_right.color,  dark_left.legend_label,  dark_right.legend_label)
 
-    # Divider between the two data sides
-    ax.axvline(0.5, ymin=0.05, ymax=0.95,
-               color=SPINE_COLOR, linewidth=0.8, linestyle='--')
+    ax.axvline(0.5, ymin=0.05, ymax=0.95, color=SPINE_COLOR, linewidth=0.8, linestyle="--")
 
     plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    out_path = os.path.join(TMP_DIR, "legend.png")
+    out_path = os.path.join(tmp_dir, "legend.png")
     fig.savefig(out_path, transparent=True, pad_inches=0)
     plt.close(fig)
-    _LEGEND_IMG_PATH = out_path
-    return out_path
-
-_COLOR_SQUARES = {}
-
-def generate_color_square(color):
-    """
-    Generate a small colored square image used instead of text headers
-    for the numeric counts.
-    """
-    global _COLOR_SQUARES
-    if color in _COLOR_SQUARES:
-        return _COLOR_SQUARES[color]
-    
-    fig, ax = plt.subplots(figsize=(0.12, 0.12), dpi=BAR_DPI)
-    ax.add_patch(mpatches.Rectangle((0, 0), 1, 1, facecolor=color, edgecolor='white', linewidth=0.5))
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.axis('off')
-    
-    plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
-    out_path = os.path.join(TMP_DIR, f"square_{color.replace('#', '')}.png")
-    fig.savefig(out_path, transparent=True, pad_inches=0)
-    plt.close(fig)
-    
-    _COLOR_SQUARES[color] = out_path
     return out_path
 
 
-# ── ETE3 layout & tree style ─────────────────────────────────────────────────
-def create_layout_fn(ncbi, phylum_metadata, include_counts):
+def _color_square_factory(tmp_dir: str):
+    """Return a function `(color) -> path` that lazily renders + memoizes
+    a small colored swatch per render. Memoization is local to the
+    factory's closure (no module globals)."""
+    cache: dict[str, str] = {}
+
+    def make(color: str) -> str:
+        if color in cache:
+            return cache[color]
+        fig, ax = plt.subplots(figsize=(0.12, 0.12), dpi=BAR_DPI)
+        ax.add_patch(mpatches.Rectangle((0, 0), 1, 1, facecolor=color, edgecolor="white", linewidth=0.5))
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.axis("off")
+        plt.subplots_adjust(left=0, right=1, top=1, bottom=0)
+        out_path = os.path.join(tmp_dir, f"square_{color.replace('#', '')}.png")
+        fig.savefig(out_path, transparent=True, pad_inches=0)
+        plt.close(fig)
+        cache[color] = out_path
+        return out_path
+
+    return make
+
+
+# ── ETE3 layout & tree style ─────────────────────────────────────────
+def create_layout_fn(ncbi, phylum_metadata, include_counts, tmp_dir):
+    """Build the per-leaf layout function. Closes over the per-render
+    `tmp_dir` so all generated bar-chart / swatch images go there."""
+    make_swatch = _color_square_factory(tmp_dir)
+
     def my_layout(node):
         if not node.is_leaf():
             return
 
-        taxid      = int(node.name)
+        try:
+            taxid = int(node.name)
+        except (TypeError, ValueError):
+            return
         taxon_name = ncbi.get_taxid_translator([taxid]).get(taxid, str(taxid))
 
-        # Col 0 – taxon name ───────────────────────────────────────────────
-        name_face = TextFace(f" {taxon_name} ({taxid})", fsize=10, ftype="times new roman", fstyle="italic")
-        name_face.margin_right = 0 # 10
+        name_face = TextFace(f" {taxon_name} ({taxid})", fsize=10,
+                             ftype="times new roman", fstyle="italic")
+        name_face.margin_right = 0
         node.add_face(name_face, column=0, position="aligned")
 
         if taxid not in phylum_metadata:
@@ -271,84 +206,110 @@ def create_layout_fn(ncbi, phylum_metadata, include_counts):
 
         meta = phylum_metadata[taxid]
 
-        # Col 1 – divergent bar chart ──────────────────────────────────────
-        img_face = ImgFace(generate_bar_chart(taxid, meta))
-        img_face.margin_left  = 5
+        img_face = ImgFace(generate_bar_chart(taxid, meta, tmp_dir))
+        img_face.margin_left = 5
         img_face.margin_right = 15
         node.add_face(img_face, column=1, position="aligned")
 
-        # Col 2 – total organisms ──────────────────────────────────────────
-        n_face = TextFace(f"{meta['n_rows']:,}", fsize=10, bold=True,
+        n_face = TextFace(f"{meta.n_rows:,}", fsize=10, bold=True,
                           ftype="times new roman", tight_text=True)
         n_face.margin_right = 20
         node.add_face(n_face, column=2, position="aligned")
 
         if include_counts:
-            # Helper to add a colored square and count value side-by-side securely in separate columns
-            def _add_count_col(entries, organisms, color, col_idx_sq, col_idx_txt, is_last=False):
-                # 1) Colored square
-                sq_face = ImgFace(generate_color_square(color))
-                sq_face.margin_left = 0 # 5 then changed to 0
-                sq_face.margin_right = 3 # margin between square and its text
+            def _add_count_col(entries, organisms, color, col_idx_sq, col_idx_txt):
+                sq_face = ImgFace(make_swatch(color))
+                sq_face.margin_left = 0
+                sq_face.margin_right = 3
                 node.add_face(sq_face, column=col_idx_sq, position="aligned")
-                
-                # 2) Count value: "Entries (Organisms)"
-                txt_face = TextFace(f"{entries:,} ({organisms:,})", fsize=10, ftype="times new roman", tight_text=True)
-                # txt_face.margin_right = 15 if is_last else 8
+                txt_face = TextFace(f"{entries:,} ({organisms:,})", fsize=10,
+                                    ftype="times new roman", tight_text=True)
                 txt_face.margin_right = 0
                 node.add_face(txt_face, column=col_idx_txt, position="aligned")
-            
-            # Left counts mapped to specific colours (using discrete columns to avoid overlaps)
-            _add_count_col(meta['s_ass'], meta['c_ass'], C_ASS_LIGHT, 3, 4)
-            _add_count_col(meta['s_ann'], meta['c_ann'], C_ANN_DARK,  5, 6, is_last=True)
-            
-            # Right counts mapped to specific colours
-            _add_count_col(meta['s_rna'], meta['c_rna'], C_RNA_LIGHT, 7, 8)
-            _add_count_col(meta['s_lng'], meta['c_lng'], C_LNG_DARK,  9, 10, is_last=True)
+
+            # Column layout: (swatch, "{entries:,} ({organisms:,})") pair
+            # per metric, starting at column 3 — so metric i lives in
+            # columns 3+2i (swatch) and 4+2i (text).
+            for i, m in enumerate(METRICS):
+                _add_count_col(
+                    getattr(meta, m.total_key), getattr(meta, m.coverage_key),
+                    m.color, 3 + 2 * i, 4 + 2 * i,
+                )
 
     return my_layout
 
 
-def configure_tree_style(my_layout, include_counts):
+def configure_tree_style(my_layout, include_counts, tmp_dir):
     ts = TreeStyle()
-    ts.layout_fn        = my_layout
-    ts.show_leaf_name   = False
-    ts.force_topology   = True
-    ts.draw_guiding_lines   = True
-    ts.guiding_lines_type   = 2
-    ts.guiding_lines_color  = "#c7c7c7"
+    ts.layout_fn = my_layout
+    ts.show_leaf_name = False
+    ts.force_topology = True
+    ts.draw_guiding_lines = True
+    ts.guiding_lines_type = 2
+    ts.guiding_lines_color = "#c7c7c7"
 
-    # Header Col 1 – legend (aligned with bar chart column)
-    legend_face = ImgFace(generate_legend_img())
-    legend_face.margin_left   = 5
-    legend_face.margin_right  = 15
+    legend_face = ImgFace(generate_legend_img(tmp_dir))
+    legend_face.margin_left = 5
+    legend_face.margin_right = 15
     legend_face.margin_bottom = 8
     ts.aligned_header.add_face(legend_face, column=1)
 
-    # Footer Col 1 – axis ruler (aligned with bar chart column)
-    axis_face = ImgFace(generate_axis_img())
-    axis_face.margin_left  = 5
+    axis_face = ImgFace(generate_axis_img(tmp_dir))
+    axis_face.margin_left = 5
     axis_face.margin_right = 15
     ts.aligned_foot.add_face(axis_face, column=1)
 
-    # Header Col 2 – "Number of organisms"
     org_header = TextFace("Number of\nspecies", fsize=10, bold=True,
                           ftype="times new roman", tight_text=True)
-    org_header.margin_right  = 20
+    org_header.margin_right = 20
     org_header.margin_bottom = 10
     ts.aligned_header.add_face(org_header, column=2)
 
     if include_counts:
-        # Add a unified header for the counts section
-        # Stacked into two lines so its width matches the count text cells,
-        # preventing ETE3 from widening the column and displacing the squares!
         counts_header = TextFace("Entries (Unique Species)", fsize=10, bold=True,
                                  ftype="times new roman", tight_text=True)
         counts_header.margin_right = -100
         counts_header.margin_left = 0
         counts_header.margin_bottom = 0
-        
-        # Placing it in Column 6 (Annotation Unique Organism Text)
         ts.aligned_header.add_face(counts_header, column=6)
 
     return ts
+
+
+# ── Subprocess entry point ───────────────────────────────────────────
+def render_tree_in_process(phylum_metadata, include_counts, out_svg):
+    """Spawn-subprocess entry point that builds the ETE3 topology and
+    writes the rendered SVG to `out_svg`.
+
+    PyQt5 requires QApplication on the main thread; Streamlit runs
+    callbacks on worker threads, so this is invoked via
+    `multiprocessing.get_context('spawn').Process(...)` (see
+    `app.py::generate_tree_svg_cached`).
+
+    Uses Qt5's built-in `offscreen` platform plugin so we don't need an
+    X server (Xvfb / pyvirtualdisplay) anywhere — Streamlit Cloud, CI,
+    or local. The plugin is part of the PyQt5 wheel; no extra apt
+    packages are required beyond the Qt5 system libs declared in
+    packages.txt.
+    """
+    import tempfile
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    ncbi = get_ncbi()
+
+    # Batched lineage lookup (replaces an N+1 ncbi.get_lineage(tid) loop).
+    # get_lineage_translator returns {taxid: [lineage]} only for taxids
+    # present in the local taxonomy DB; missing taxids are silently dropped.
+    candidate_taxids = list(phylum_metadata.keys())
+    lineages = ncbi.get_lineage_translator(candidate_taxids)
+    valid_taxids = [t for t in candidate_taxids if t in lineages]
+    if not valid_taxids:
+        log.warning("No valid taxids in phylum_metadata; nothing to render.")
+        return
+
+    with tempfile.TemporaryDirectory(prefix="euka_bars_") as tmp_dir:
+        layout_fn = create_layout_fn(ncbi, phylum_metadata, include_counts, tmp_dir)
+        ts = configure_tree_style(layout_fn, include_counts, tmp_dir)
+        tree = ncbi.get_topology(valid_taxids)
+        tree.render(out_svg, w=1200, units="px", tree_style=ts)

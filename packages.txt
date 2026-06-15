@@ -1,5 +1,3 @@
-xvfb
-x11-utils
-libxkbcommon-x11-0
 libdbus-1-3
 libfontconfig1
+libxkbcommon-x11-0
