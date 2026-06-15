@@ -626,6 +626,56 @@ Verified imports work from any CWD (e.g. running
 `python -c "import db_builder.pipeline_build_db"` from `/tmp`).
 Full test suite still passes: 63 passed, 2 skipped.
 
+## 2026-06-15 — Batch 9: schema version gate (Phase 3 #35)
+
+Defensive plumbing for future schema changes. Today the pipeline and
+the app share the same `eukaryotes.db` schema by convention; nothing
+forces an old app to refuse a newer DB or vice versa. After a schema
+change that breaks the SELECTs, you'd get a cryptic SQLite error
+instead of a clear "incompatible DB" message.
+
+### Changes
+
+**`src/constants.py`** — new constants:
+
+| Constant | Purpose |
+|---|---|
+| `DB_SCHEMA_VERSION_CURRENT` (= 1) | What the pipeline stamps on every build. Bump on any schema change. |
+| `DB_SCHEMA_VERSION_MIN_COMPATIBLE` (= 1) | Minimum stamped version the app will accept. Bump only on *breaking* schema changes. |
+| `DB_SCHEMA_VERSION_LEGACY` (= 0) | SQLite's default for unstamped DBs. Treated as equivalent to MIN_COMPATIBLE so existing users aren't broken on first launch. |
+
+**`db_builder/pipeline_build_db.py`** — added `_stamp_schema_version(path)`
+that runs *after* the atomic rename so an interrupted build cannot
+leave a versioned-looking `.partial`.
+
+**`src/utils.py::ensure_database`** — now calls `_check_schema_version`
+after the download path. Returns `False` (Streamlit shows the error)
+on incompatibility. Specific exception `IncompatibleDatabaseError`
+distinguishes "newer than app supports" from "older than app supports"
+in the user-facing message.
+
+**`tests/test_schema_version.py`** (new) — 7 tests:
+- read returns stamped value
+- read returns 0 for unstamped
+- check accepts current
+- check accepts legacy 0 with an info log (regression net for the
+  "don't break existing users" requirement)
+- check rejects newer-than-current
+- check rejects older-than-min (self-skips while MIN_COMPATIBLE is 1)
+- **stamper/reader drift guard**: the pipeline's `_stamp_schema_version`
+  must write the constant the app reads. Catches the class of bug
+  where someone bumps `DB_SCHEMA_VERSION_CURRENT` but forgets to
+  re-run the pipeline, or vice versa.
+
+### Verified on the existing user DB
+
+Running `_check_schema_version("eukaryotes.db")` against the user's
+current DB:
+> "eukaryotes.db has no schema version stamp (legacy build) — treating
+> as compatible with v1."
+
+No forced rebuild required.
+
 ## Items still intentionally deferred
 
 - **Phase 2 #18 (NCBITaxa singleton)** — blocked by Streamlit thread-affinity;

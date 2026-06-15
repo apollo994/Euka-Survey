@@ -25,7 +25,7 @@ import sys
 import time
 from pathlib import Path
 
-from src.constants import EUKARYOTE_TXID
+from src.constants import DB_SCHEMA_VERSION_CURRENT, EUKARYOTE_TXID
 from src.ete_utils import get_all_descendant_taxids
 from db_builder.build_db.get_assemblies import get_assemblies
 from db_builder.build_db.get_annotations import fetch_annotrieve_annotations
@@ -118,6 +118,23 @@ def step_precompute_taxa(partial_path):
     precompute_common_clades(partial_path)
 
 
+def _stamp_schema_version(path: Path) -> None:
+    """Set PRAGMA user_version on the produced DB.
+
+    The app reads this on startup to refuse incompatible DBs (see
+    src/utils.py::ensure_database). Stamped after the final atomic
+    rename so an interrupted build never produces a versioned-looking
+    .partial file.
+    """
+    import sqlite3
+    from contextlib import closing
+    with closing(sqlite3.connect(path)) as conn:
+        # SQLite's PRAGMA does not accept parametrized values.
+        conn.execute(f"PRAGMA user_version = {int(DB_SCHEMA_VERSION_CURRENT)}")
+        conn.commit()
+    log.info("Stamped %s with schema version %d", path.name, DB_SCHEMA_VERSION_CURRENT)
+
+
 def main():
     log.info("--- Starting Eukaryote Feature Pipeline ---")
     start_time = time.time()
@@ -145,6 +162,10 @@ def main():
 
         # Atomic rename — only after every step has succeeded.
         os.replace(partial_path, final_path)
+
+        # Stamp the schema version AFTER the atomic rename so an
+        # interrupted build cannot leave a versioned-looking .partial.
+        _stamp_schema_version(final_path)
 
         elapsed = time.time() - start_time
         log.info("Pipeline completed successfully in %.2f seconds.", elapsed)

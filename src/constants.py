@@ -35,3 +35,20 @@ STANDARD_BREAKPOINTS: list[int] = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400,
 SQLITE_MAX_VARIABLES: int = 999
 
 RENDER_SUBPROCESS_TIMEOUT_SECONDS: int = 120
+
+# eukaryotes.db schema version stamped via `PRAGMA user_version`.
+#
+# The pipeline writes CURRENT on every build. The app reads it on
+# startup and refuses to launch against a DB outside the
+# [MIN_COMPATIBLE, CURRENT] range.
+#
+# Bump CURRENT when you make a schema change. Bump MIN_COMPATIBLE only
+# when you make a *breaking* change that the app's queries can no
+# longer tolerate (rare).
+#
+# Special case: SQLite's default value is 0. We treat 0 as "legacy
+# pre-versioned build" and accept it as equivalent to version 1, so
+# existing DBs built before this gate was introduced keep working.
+DB_SCHEMA_VERSION_CURRENT: int = 1
+DB_SCHEMA_VERSION_MIN_COMPATIBLE: int = 1
+DB_SCHEMA_VERSION_LEGACY: int = 0  # unstamped DBs from before this gate

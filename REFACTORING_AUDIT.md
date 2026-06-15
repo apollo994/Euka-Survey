@@ -371,6 +371,6 @@ app.py         # thin orchestrator
 32. Pipeline as staged state machine (per-step snapshot files; idempotent build).
 33. ✅ Add `pyproject.toml`; drop `sys.path.insert` hacks. *(Batch 7 added pyproject.toml; Batch 8 removed the 5 sys.path hacks across db_builder/ and tests/conftest.py.)*
 34. ✅ `tests/` with fixture SQLite + parity test (SQL path vs Python path produce identical results) — done as Batch 6.
-35. `PRAGMA user_version` schema versioning.
+35. ✅ `PRAGMA user_version` schema versioning. *(Batch 9: pipeline stamps version on every build; app validates on startup via `_check_schema_version`; legacy unstamped DBs accepted as compatible with v1 so existing users aren't broken; 7 new tests including stamper/reader drift guard.)*
 36. Long-lived Qt render worker (retire spawn-per-render).
 37. Versioned releases + `latest` pointer supporting rollback.
