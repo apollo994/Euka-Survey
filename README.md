@@ -25,17 +25,25 @@ The data is precomputed monthly into a SQLite database
 
 ## What you can do with it
 
-1. Pick a **root taxon** (a built-in clade like Mammalia, or any NCBI
-   Taxon ID).
-2. Pick a **breakdown rank** (phylum / class / order / family / genus /
-   species — restricted to ranks below the root's own rank).
-3. See an instant summary of how many species in that clade have
-   assemblies / annotations / RNA-seq / long-read RNA-seq.
-4. **Filter** the breakdown (e.g. "must have an assembly AND long-read
-   RNA-Seq"), **sort** by any metric, and **limit** to the top N.
-5. Generate a **phylogenetic tree visualization** with per-leaf
-   divergent bar charts, downloadable as SVG.
-6. **Export TSV** of the full breakdown for downstream analysis.
+1. **Pick a clade** — choose a **Root taxon** in the sidebar (a built-in
+   clade like Mammalia, or any NCBI Taxon ID). The whole page describes
+   this clade and the species inside it.
+2. **See its coverage at a glance** — the *Genomic Resource Summary*
+   shows the clade's total species, a short Wikipedia blurb, and four
+   cards (assemblies, annotations, RNA-Seq, long-read RNA-Seq) each with
+   the species covered, the % of species covered, and the total counts.
+3. **Break it down** — in *Explore Results*, choose a **breakdown rank**
+   (phylum → species; restricted to ranks below the root's own rank) to
+   split the clade into groups, then optionally **filter** ("must have an
+   assembly AND long-read RNA-Seq"), **sort** by any metric, and **limit**
+   to the top N.
+4. **Visualize two ways** — one click generates two synced views of the
+   breakdown:
+   - a **🌳 phylogenetic tree** with per-group divergent bar charts
+     (downloadable as SVG), and
+   - a sortable **📊 table** (downloadable as TSV).
+5. **Export** — download the **complete** breakdown (every taxon,
+   unfiltered) as a TSV for downstream analysis, with an in-app preview.
 
 ---
 
@@ -84,6 +92,9 @@ If you're auditing or planning improvements:
   audit + technical-debt ranking + roadmap.
 - [REFACTORING_CHANGELOG.md](REFACTORING_CHANGELOG.md) — per-item log
   of refactor work done, with rationale.
+- [UI_IMPROVEMENT_PLAN.md](UI_IMPROVEMENT_PLAN.md) — the living plan for
+  the web-app UI/UX: current layout inventory, themed backlog, and a
+  changelog of UI work.
 
 ---
 

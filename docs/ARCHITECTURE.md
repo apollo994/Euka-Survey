@@ -17,20 +17,52 @@ This document covers the web-app half. For the pipeline, see
 
 ```
 .
-├── app.py                  # Streamlit entry point (UI + orchestration)
-├── src/                    # Web-app domain logic
-│   ├── constants.py        #   Shared constants (taxids, ranks, limits)
-│   ├── database.py         #   SQL layer over the precomputed tables
-│   ├── taxonomy.py         #   Live ETE3 fallback for non-precomputed roots
-│   ├── ete_utils.py        #   taxid → name/rank helpers, descendant CTE
-│   ├── visualization.py    #   ETE3 tree rendering + bar-chart panel
-│   └── utils.py            #   DB download + TSV export
-├── db_builder/             # Offline pipeline (see docs/PIPELINE.md)
-├── .streamlit/             # Streamlit theme config
-├── environment.yml         # Conda env (numpy<2, ete3, PyQt5, streamlit, …)
-├── packages.txt            # apt packages for Streamlit Cloud (xvfb, etc.)
-└── eukaryotes.db           # The data — NOT in git, downloaded on first run
+├── app.py                   # Thin controller — wires the ui/ sections together
+├── ui/                      # View layer — one render_* function per page section
+│   ├── state.py             #   RootChoice (sidebar) + QueryState (results)
+│   ├── query_config.py      #   Sidebar root-taxon picker → RootChoice
+│   ├── sidebar.py           #   Help & Resources + project / data-source links
+│   ├── summary.py           #   Genomic Resource Summary cards + Wikipedia "About" card
+│   ├── tree.py              #   Explore Results: rank + form + 🌳 Tree / 📊 Table tabs
+│   └── export.py            #   Export Data: explanation + TSV preview + download
+├── src/                     # Web-app domain logic (no Streamlit widgets)
+│   ├── constants.py         #   Shared constants (taxids, ranks, limits, schema version)
+│   ├── metrics.py           #   Metric config table + CladeMetadata dataclass
+│   ├── database.py          #   SQL layer over the precomputed tables
+│   ├── cache.py             #   All @st.cache_* wrappers (DB conn + query/render caches)
+│   ├── taxonomy.py          #   Live ETE3 fallback + valid-rank & lineage-breadcrumb lookups
+│   ├── ete_utils.py         #   get_ncbi() accessor, taxid → name/rank, descendant CTE
+│   ├── visualization.py     #   ETE3 tree rendering + per-leaf divergent bar charts
+│   ├── wikipedia.py         #   Cached Wikipedia summary for the root-taxon "About" card
+│   └── utils.py             #   DB download + schema-version check + TSV export
+├── db_builder/              # Offline pipeline (see docs/PIPELINE.md)
+├── tests/                   # pytest suite (uv run pytest)
+├── .streamlit/              # Streamlit theme config (brand-colored light theme)
+├── pyproject.toml, uv.lock  # Dependencies, managed with uv (see README "Quick start")
+├── packages.txt             # apt packages for Streamlit Cloud (Qt5 trixie t64 libs)
+└── eukaryotes.db            # The data — NOT in git, downloaded on first run
 ```
+
+---
+
+## UI layer (`ui/`)
+
+`app.py` is a thin controller: it boots the DB, then calls one `render_*`
+function per page section. Sections never call each other — all cross-section
+state flows through two small frozen dataclasses in `ui/state.py`:
+
+- **`RootChoice`** — produced by the **sidebar** (`render_root_control`): the
+  single global "which clade?" question (root taxid + resolved name/rank).
+  Drives the summary, which rolls up the whole clade regardless of rank.
+- **`QueryState`** — produced by **Explore Results** (`render_results`), which
+  owns the breakdown rank. Carries the root fields too, so the tree / table /
+  export consumers share one object.
+
+Page order (top to bottom): sidebar **root picker + Help**, then in the main
+area the **Genomic Resource Summary** (`summary.py` — species count, Wikipedia
+`About` card, four resource cards), **Explore Results** (`tree.py` — a prominent
+segmented rank control + a compact filter/sort/limit form → 🌳 Tree / 📊 Table
+tabs), and **Export Data** (`export.py` — the full-breakdown TSV with a preview).
 
 ---
 
@@ -114,20 +146,21 @@ get_taxa_count_cached(conn, root_taxid, target_rank)
         └── no  → fetch_taxa_cached  ── live ETE3 traversal
                                           (taxonomy.get_taxa_at_rank)
         ▼
-User clicks "Generate Visualization"
+User clicks "Generate Tree & Table"
         │
         ├── if precomputed:
-        │     database.get_filtered_taxa_metadata (SQL JOIN + WHERE + ORDER + LIMIT)
+        │     database.get_filtered_taxa_metadata (SQL: WHERE + ORDER + LIMIT)
         │
         └── else:
-              database.build_phylum_metadata (bulk fetch)
-              + Python-side filter/sort/limit  ⚠ duplicates the SQL path —
-                                                see REFACTORING_AUDIT.md C1
+              get_phylum_metadata_cached (bulk fetch)
+              + database.filter_sort_limit_metadata (same logic, in Python)
+              # Both paths share _row_to_metadata + the FilterLogic enum, so
+              # they can't drift — parity covered by tests/test_filters_parity.py
         ▼
-visualization.render_tree_in_process (in a SPAWNED subprocess, see below)
-        │
-        ▼
-SVG written to a tempfile → read back → shown via st.image + downloadable
+the resulting metadata feeds two synced views (st.tabs):
+   ├── 🌳 Tree  → visualization.render_tree_in_process (SPAWNED subprocess,
+   │             see below) → SVG → tempfile → st.image + SVG download
+   └── 📊 Table → st.dataframe (coverage ProgressColumns) + per-view TSV download
 ```
 
 For TSV export, the flow is simpler:
@@ -142,6 +175,10 @@ full breakdown.
 ---
 
 ## Streamlit caching
+
+All of these wrappers live in **`src/cache.py`** (imported by `app.py` and the
+`ui/` sections); `utils.generate_tsv` and `wikipedia.get_taxon_summary` carry
+their own `@st.cache_data` in their own modules.
 
 | Function                              | Decorator                    | Keyed on                                                                |
 |---------------------------------------|------------------------------|-------------------------------------------------------------------------|
@@ -164,53 +201,50 @@ Streamlit's data cache requires hashable args.
 ETE3 calls into PyQt5 to render trees. PyQt5 requires its `QApplication`
 to be created on a process's *main thread*. Streamlit, however, runs
 user callbacks on worker threads. The workaround in
-`app.py::generate_tree_svg_cached`:
+`src/cache.py::generate_tree_svg_cached`:
 
 1. `multiprocessing.get_context('spawn').Process(...)` launches a fresh
    process (the main thread of that process becomes Qt's main thread).
-2. The child runs `visualization.render_tree_in_process` which:
-   - Starts a `pyvirtualdisplay.Display` (uses `xvfb` from `packages.txt`
-     on Streamlit Cloud).
-   - Builds the ETE3 topology and writes the rendered SVG to the path
-     handed in.
+2. The child runs `visualization.render_tree_in_process`, which builds the
+   ETE3 topology and writes the rendered SVG to the path handed in. It uses
+   Qt's built-in **`offscreen` platform plugin** (`QT_QPA_PLATFORM=offscreen`,
+   pinned at `visualization.py` import time) — so there is **no Xvfb /
+   pyvirtualdisplay** dependency anywhere (local, CI, or Cloud); only the Qt5
+   system libs in `packages.txt` are needed.
 3. The parent waits with a **timeout** (`p.join(timeout=120)`). On
    timeout the child is `terminate()`d → `kill()`d.
 4. The SVG bytes are read back from the file, the file is removed in a
    `try/finally`.
 
-A second tempfile is needed for display because `st.image` chokes on
-raw SVG bytes (PIL doesn't recognize the format), so we write the bytes
-back to disk and pass `st.image` the path. The whole thing is wrapped
-in `try/finally` to clean up.
+A second tempfile is needed for *display* because `st.image` chokes on
+raw SVG bytes (PIL doesn't recognize the format), so the bytes are
+written back to disk and `st.image` is handed the path (`ui/tree.py`).
 
 ---
 
 ## ETE3 NCBITaxa: the thread-affinity caveat
 
 `NCBITaxa` opens a SQLite connection to the local NCBI taxonomy
-database. SQLite connections are *not* safe to share across threads by
-default. Streamlit runs callbacks on worker threads, so the codebase
-currently instantiates a fresh `NCBITaxa()` per use rather than holding
-a module-level singleton.
+database, and SQLite connections are *not* safe to share across threads
+by default. Streamlit runs callbacks on worker threads, so
+`src/ete_utils.py::get_ncbi()` hands out a **`threading.local()`-cached**
+instance — one `NCBITaxa` per worker thread for the process lifetime,
+which sidesteps the `check_same_thread` issue without re-opening the
+taxonomy DB on every call. All production call sites go through it.
 
-For pure taxid → name / rank lookups, `src/ete_utils.py` uses
-`@functools.lru_cache` so each unique taxid resolves at most once per
-process even though `NCBITaxa()` itself is re-instantiated on cache
-miss. A proper thread-local singleton is tracked in
-[REFACTORING_AUDIT.md](../REFACTORING_AUDIT.md) (Phase 2 #18).
+Taxid → name / rank lookups additionally carry `@functools.lru_cache`,
+so each unique taxid resolves at most once per process.
 
 ---
 
-## Known design issues
+## Status & further reading
 
-These are documented in detail in
-[REFACTORING_AUDIT.md](../REFACTORING_AUDIT.md) — listed here so the
-reader has the lay of the land before opening a PR:
+The large architectural refactor catalogued in
+[REFACTORING_AUDIT.md](../REFACTORING_AUDIT.md) is essentially complete — the
+`ui/` split, the unified filter/sort/limit path, the `get_ncbi()` thread-local
+accessor, the `tests/` suite, `PRAGMA user_version` schema versioning, and the
+staged `db_builder` pipeline have all landed (only a few Low-priority items
+remain; see the audit's status column).
 
-- **No tests.** Audit item **H7**.
-- **`NCBITaxa` instantiated per call** — `lru_cache` mitigates the
-  hot-path repetition but a real thread-local singleton (Phase 2 #18)
-  is still pending; blocked on the Streamlit worker-thread / SQLite
-  thread-affinity interaction.
-- **`app.py` is still a single ~500-line file.** A `ui/`-based split
-  is in the Phase 3 roadmap.
+Ongoing UI/UX work — layout, theming, the in-app table, the Wikipedia card,
+etc. — is tracked in [UI_IMPROVEMENT_PLAN.md](../UI_IMPROVEMENT_PLAN.md).

@@ -34,7 +34,9 @@ monthly DB-build workflow (`.github/workflows/update_db.yml`).
 
 ### Two halves of the project
 
-1. **`app.py` + `src/`** — the Streamlit app. Reads the prebuilt, read-only `eukaryotes.db`.
+1. **`app.py` + `ui/` + `src/`** — the Streamlit app. `app.py` is a thin controller that wires the
+   `ui/` view sections (one `render_*` each, cross-section state via `ui/state.py`); `src/` holds
+   the domain logic + `@st.cache_*` wrappers. Reads the prebuilt, read-only `eukaryotes.db`.
 2. **`db_builder/`** — an offline pipeline that fetches data from NCBI/Annotrieve/ENA and produces
    `eukaryotes.db`. Run manually or via the monthly GitHub Action; not invoked by the web app.
 
@@ -80,51 +82,74 @@ Both are first-class importable Python packages declared in `pyproject.toml`'s
   `filter_sort_limit_metadata`, and the `FilterLogic` enum keep the SQL and Python-fallback
   paths semantically identical.
 - `taxonomy.py` — `get_taxa_at_rank` via live ETE3 (`NCBITaxa`) descendant traversal, used as
-  the fallback when a root/rank pair isn't in `precomputed_taxa`. `resolve_valid_ranks` is
-  `@lru_cache`d; unknown taxids raise `UnknownTaxonError`.
-- `ete_utils.py` — taxid <-> name/rank lookups via ETE3, plus `get_all_descendant_taxids`, which
-  queries ETE3's underlying SQLite taxonomy DB directly with a recursive CTE (used by the offline
-  pipeline, not the app). Also hosts `render_tree_in_process` (the subprocess entrypoint).
-- `visualization.py` — builds the ETE3 phylogenetic tree SVG. Pins `matplotlib.use("Agg")` at
-  import time. Per-leaf divergent bar charts (assemblies/annotations on the left, RNA-Seq/long-read
-  on the right) are pre-rendered as PNGs into a per-render `tempfile.TemporaryDirectory` and
-  embedded via `ImgFace` — there is no shared `.tmp_bars/`. Lineage lookups for the candidate
-  taxids are batched via `get_lineage_translator`.
+  the fallback when a root/rank pair isn't in `precomputed_taxa`. `resolve_valid_ranks` (rank
+  dropdown) and `get_lineage_breadcrumb` (sidebar breadcrumb) are `@lru_cache`d; unknown taxids
+  raise `UnknownTaxonError`.
+- `ete_utils.py` — `get_ncbi()` (the `threading.local()`-cached `NCBITaxa` accessor every prod
+  call site uses) plus taxid <-> name/rank lookups via ETE3 and `get_all_descendant_taxids`,
+  which queries ETE3's underlying SQLite taxonomy DB directly with a recursive CTE (used by the
+  offline pipeline, not the app).
+- `metrics.py` — single source of truth for the four resources: the `Metric` config table (bar
+  colors, filter/sort/card/TSV/external-link config) + the frozen `CladeMetadata` dataclass. Edit
+  `METRICS` and every consumer (`database`, `visualization`, `ui/`, `utils`) follows.
+- `cache.py` — **all** `@st.cache_*` wrappers: `get_db_ready`/`get_db_connection`
+  (`@st.cache_resource`) + the query/render `@st.cache_data` caches. Imported by `app.py` + `ui/`.
+- `visualization.py` — builds the ETE3 phylogenetic tree SVG and hosts `render_tree_in_process`
+  (the spawn-subprocess entrypoint). Pins `matplotlib.use("Agg")` at import time. Per-leaf
+  divergent bar charts (assemblies/annotations on the left, RNA-Seq/long-read on the right) are
+  pre-rendered as PNGs into a per-render `tempfile.TemporaryDirectory` and embedded via `ImgFace`
+  — there is no shared `.tmp_bars/`. Lineage lookups are batched via `get_lineage_translator`.
+- `wikipedia.py` — `get_taxon_summary(name)`: cached (24h) Wikipedia REST-summary fetch for the
+  root-taxon "About" card in `ui/summary.py`; follows redirects, fails silent → `None`.
 - `utils.py` — `ensure_database` (downloads `eukaryotes.db` if absent, validates schema version),
   `generate_tsv` (exports query results as TSV), and the schema-version helpers
   (`_read_schema_version`, `_check_schema_version`, `IncompatibleDatabaseError`).
 - `constants.py` — schema-version constants and other module-level shared values.
 
+### `ui/` modules
+
+`app.py` calls one `render_*` per page section; sections never call each other — cross-section
+state flows through `ui/state.py`'s frozen dataclasses: **`RootChoice`** (sidebar, "which clade?")
+→ **`QueryState`** (Explore Results, which owns the breakdown rank). `query_config.py` (sidebar
+root picker), `sidebar.py` (Help & Resources), `summary.py` (resource cards + Wikipedia `About`
+card), `tree.py` (Explore Results: segmented rank control + form → 🌳 Tree / 📊 Table tabs),
+`export.py` (full-breakdown TSV + preview).
+
 ### Why tree rendering happens in a subprocess
 
 ETE3 needs PyQt5's `QApplication` created on a process's main thread, but Streamlit runs callbacks
-on worker threads. `app.py`'s `generate_tree_svg_cached` spawns a fresh process
-(`multiprocessing.get_context('spawn')`) running `ete_utils.render_tree_in_process`, which writes
-an SVG to a temp file that the parent reads back. The subprocess uses Qt's `offscreen` platform
+on worker threads. `src/cache.py`'s `generate_tree_svg_cached` spawns a fresh process
+(`multiprocessing.get_context('spawn')`) running `visualization.render_tree_in_process`, which
+writes an SVG to a temp file that the parent reads back. The subprocess uses Qt's `offscreen` platform
 (`os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")`) — there is no Xvfb / pyvirtualdisplay
 dependency anywhere. The rendered SVG can't be passed to `st.image` directly (PIL chokes on raw
 SVG bytes), so it's written to a temp `.svg` file and read back by path.
 
-### Streamlit caching layers in `app.py`
+### Streamlit caching layers (`src/cache.py`)
 
 - `get_db_ready` / `get_db_connection`: `@st.cache_resource`, one-time DB download + read-only
   connection (`mode=ro`, `check_same_thread=False`).
 - `get_taxa_count_cached`, `fetch_taxa_cached`, `get_phylum_metadata_cached`,
   `get_filtered_taxa_metadata_cached`, `generate_tree_svg_cached`: `@st.cache_data` wrappers around
   the `src/` functions, keyed on query params (taxids passed as tuples since they must be hashable).
+- `utils.generate_tsv` and `wikipedia.get_taxon_summary` carry their own `@st.cache_data` in their
+  own modules.
 
 ### Query flow (root taxon -> rank -> tree/TSV)
 
-1. User picks a root taxid (common clade or arbitrary NCBI taxid) and a breakdown rank. Valid ranks
-   are restricted to those *below* the root's own rank (computed live via ETE3 lineage lookup).
+1. User picks a root taxid in the **sidebar** (`ui/query_config.py`; common clade or arbitrary NCBI
+   taxid), then a breakdown rank in **Explore Results** (`ui/tree.py`). Valid ranks are restricted
+   to those *below* the root's own rank (computed live via ETE3 lineage lookup).
 2. `get_taxa_count_cached` checks `precomputed_taxa` first (`is_precomputed = True` if rows exist).
    If empty, falls back to `fetch_taxa_cached` -> `taxonomy.get_taxa_at_rank` (live ETE3).
-3. On "Generate Visualization":
+3. On "Generate Tree & Table":
    - If precomputed, `get_filtered_taxa_metadata_cached` does filtering/sorting/limiting in SQL.
    - Otherwise, `get_phylum_metadata_cached` fetches all metadata and `filter_sort_limit_metadata`
      applies the same logic in Python. Both paths share `_row_to_metadata` and `FilterLogic`
      so they cannot drift — the parity matrix in `tests/test_filters_parity.py` exercises 16
      scenarios across them.
+   - The resulting metadata feeds two synced `st.tabs` views: the 🌳 Tree (SVG) and the 📊 Table
+     (`st.dataframe`), each with its own download.
 4. TSV export (`utils.generate_tsv`) always re-resolves the full taxa list and calls
    `build_phylum_metadata` directly (not the filtered/sorted/limited path).
 

@@ -217,6 +217,11 @@ full TSV), 0 errors/warnings.
 - [x] **E3. Table download.** DONE (2026-06-16) — "Download table (TSV)".
 - [ ] **E4. Per-row drill-down.** Selecting a table row could set it as the new
   root (re-query one level deeper) — turns the table into a navigator. (Med–High.)
+- [x] **E5. Export Data section.** DONE (2026-06-16) — clearer explanation
+  (it's the *complete*, never-filtered/sorted/limited breakdown, with the live
+  row count and what the columns mean) + a compact **truncated preview** (first
+  10 rows of the actual file, parsed from the head of the already-in-memory TSV
+  so it adds no memory; readable headers derived from the METRICS schema).
 
 ### Theme F — Interaction performance
 - [ ] **F1. `@st.fragment` for the tree section.** Isolate the form + render so
@@ -288,6 +293,18 @@ results section's framing needs to catch up, and the limits need to be safer.
   replaced the big blue `st.info` size callout with a subtle gray inline
   readback (":material/category: **N** {rank}-level taxa · larger selections
   take longer to render").
+- [x] **H10. Sidebar Help & Resources — complete self-contained guide.** DONE
+  (2026-06-16) — rewrote the help into a full walkthrough (what the app is, the
+  four resources + sources, the 4 steps matching the current UI, how to read the
+  numbers/bars, data provenance) and set the expander `expanded=True`. Added a
+  "Project & sources" link block (GitHub, NCBI, Annotrieve, ENA). A lost user
+  can understand the whole app from this panel alone. (Also covers G2.)
+- [x] **Docs sweep.** DONE (2026-06-16) — `README.md` ("What you can do" → current
+  UI + UI-plan link), `docs/ARCHITECTURE.md` (repo layout incl. `ui/` + new `src/`
+  modules, a new "UI layer" section, query flow → Tree/Table tabs, subprocess →
+  offscreen Qt not xvfb, `get_ncbi()` thread-local, status section), and
+  `CLAUDE.md` (added `ui/`/`cache.py`/`metrics.py`/`wikipedia.py`, fixed
+  caching + subprocess locations, `render_tree_in_process` is in `visualization`).
 - [x] **H9. Explore Results redesign (rank prominence + compact form).** DONE
   (2026-06-16) — breakdown rank is now a prominent `st.segmented_control`
   (the section's primary control) with a dynamic explainer ("Splitting
@@ -379,3 +396,8 @@ A pragmatic order that front-loads visible wins and unblocks later work:
 - 2026-06-16 — H9: Explore Results redesign — segmented rank control + dynamic
   explainer, 3-column compact form, toggles folded into the grid, "Custom" max
   option removed. Files: `ui/tree.py`. AppTest + pytest (113) green.
+- 2026-06-16 — E5 (Export Data: explanation + truncated TSV preview), H10
+  (comprehensive sidebar Help & Resources, open by default + source links), and
+  a docs sweep (README, docs/ARCHITECTURE.md, CLAUDE.md brought up to date with
+  the ui/ split + new modules + offscreen rendering). Files: `ui/export.py`,
+  `ui/sidebar.py`, `README.md`, `docs/ARCHITECTURE.md`, `CLAUDE.md`.
