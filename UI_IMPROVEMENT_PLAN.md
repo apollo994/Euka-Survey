@@ -288,6 +288,16 @@ results section's framing needs to catch up, and the limits need to be safer.
   replaced the big blue `st.info` size callout with a subtle gray inline
   readback (":material/category: **N** {rank}-level taxa · larger selections
   take longer to render").
+- [x] **H9. Explore Results redesign (rank prominence + compact form).** DONE
+  (2026-06-16) — breakdown rank is now a prominent `st.segmented_control`
+  (the section's primary control) with a dynamic explainer ("Splitting
+  **{clade}** into its **N {plural-rank}** — each row is one {rank}; the bars
+  show what share of its species have each genomic resource"). The form is a
+  compact 3-column grid (Require data for / Sort by / Max taxa) with the two
+  toggles folded into the filter + sort columns (no floating toggle row), the
+  heavy subheaders dropped, and the "Custom" max-taxa option removed. Verified
+  with AppTest (segmented control, live explainer on rank change, submit →
+  tabs, species-level + invalid edge cases).
 
 ---
 
@@ -366,3 +376,6 @@ A pragmatic order that front-loads visible wins and unblocks later work:
   (`src/wikipedia.py` + `ui/summary.py`), fixed-height row + object-fit
   thumbnail so the layout is stable across roots. Verified with AppTest (live
   fetch renders title/extract/img/link; clean run).
+- 2026-06-16 — H9: Explore Results redesign — segmented rank control + dynamic
+  explainer, 3-column compact form, toggles folded into the grid, "Custom" max
+  option removed. Files: `ui/tree.py`. AppTest + pytest (113) green.

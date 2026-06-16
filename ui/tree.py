@@ -22,16 +22,19 @@ from src.constants import HARD_NODE_CAP, STANDARD_BREAKPOINTS
 from src.metrics import CladeMetadata, METRICS
 from ui.state import QueryState, RootChoice
 
+# Plurals for the canonical ranks, for the breakdown explainer line.
+_RANK_PLURAL = {
+    "phylum": "phyla", "class": "classes", "order": "orders",
+    "family": "families", "genus": "genera", "species": "species",
+}
+
 
 def render_results(conn: sqlite3.Connection, root: RootChoice) -> QueryState:
     """Render the Explore Results section: breakdown rank + form, then the
     Tree + Table views on submit. Caller has verified `root.is_valid_root`.
     Returns the resolved `QueryState` so the caller can gate the export."""
     st.header("Explore Results", anchor=False)
-    st.caption(
-        f"Break **{root.root_name}** down by a taxonomic rank, then filter and "
-        "sort it. View the result as an interactive tree or a sortable table."
-    )
+    st.caption("Filter and sort the breakdown, then view it as an interactive tree or a sortable table.")
 
     # Step 2 — breakdown rank (reactive) + size readback. This is what the
     # rest of the section operates on.
@@ -47,59 +50,63 @@ def render_results(conn: sqlite3.Connection, root: RootChoice) -> QueryState:
         st.warning(f"No {query.target_rank}-level taxa found under TaxID {root.root_taxid}.")
         return query
 
+    filter_options = {m.filter_label: m.coverage_key for m in METRICS}
+    # Sort options derived from METRICS: count variants then total variants.
+    sort_options = {
+        "Unique Species": "n_rows",
+        **{m.sort_count_label: m.coverage_key for m in METRICS},
+        **{m.sort_total_label: m.total_key for m in METRICS},
+    }
+
     with st.form("tree_settings_form", border=True):
-        st.subheader("Filter taxa", anchor=False)
+        # One compact row: filter / sort / limit side by side (no lone
+        # full-width widgets), then a toggles row, then the CTA.
+        c_filter, c_sort, c_limit = st.columns(3, gap="large")
 
-        # Filter options derived from METRICS: label -> coverage_key.
-        filter_options = {m.filter_label: m.coverage_key for m in METRICS}
-        selected_filters = st.multiselect(
-            "Require data for (excludes taxa that lack it)",
-            list(filter_options.keys()),
-            placeholder="Select features...",
-        )
-
-        filter_logic_label = "Match ALL (AND)"
-        if len(selected_filters) > 1:
-            filter_logic_label = st.segmented_control(
-                "Condition", ["Match ALL (AND)", "Match ANY (OR)"], default="Match ALL (AND)",
+        with c_filter:
+            selected_filters = st.multiselect(
+                "Require data for",
+                list(filter_options.keys()),
+                placeholder="Any (no filter)",
+                help="Keep only taxa that have the selected resource(s).",
             )
-        filter_logic = (
-            database.FilterLogic.AND
-            if filter_logic_label == "Match ALL (AND)"
-            else database.FilterLogic.OR
-        )
-
-        st.subheader("Sort & limit", anchor=False)
-        # Sort options derived from METRICS: count variants then total variants.
-        sort_options = {
-            "Unique Species": "n_rows",
-            **{m.sort_count_label: m.coverage_key for m in METRICS},
-            **{m.sort_total_label: m.total_key for m in METRICS},
-        }
-        cols = st.columns(2)
-
-        with cols[0]:
-            sort_by_label = st.selectbox(
-                "Rank taxa by number of", list(sort_options.keys()), key="sort_by_selection",
+            filter_logic_label = "Match ALL (AND)"
+            if len(selected_filters) > 1:
+                filter_logic_label = st.segmented_control(
+                    "Match", ["Match ALL (AND)", "Match ANY (OR)"], default="Match ALL (AND)",
+                )
+            filter_logic = (
+                database.FilterLogic.AND
+                if filter_logic_label == "Match ALL (AND)"
+                else database.FilterLogic.OR
             )
-            sort_by_key = sort_options[sort_by_label]
-
             exclude_empty = st.toggle(
                 "Exclude empty taxa (no data in any resource)", value=True
             )
 
-        with cols[1]:
+        with c_sort:
+            sort_by_label = st.selectbox(
+                "Sort by", list(sort_options.keys()), key="sort_by_selection",
+                help="Ranks the taxa; the top ones are kept up to the limit.",
+            )
+            sort_by_key = sort_options[sort_by_label]
+            include_counts = st.toggle(
+                "Show numeric details on the tree",
+                value=True,
+                help="Show per-resource counts next to each leaf in the tree (does not affect the table).",
+            )
+
+        with c_limit:
             # Dynamic taxa-limit options bounded by both the actual taxa
             # count and the hard performance/memory cap.
             effective_max = min(query.num_nodes, HARD_NODE_CAP)
             valid_options_limit = [str(b) for b in STANDARD_BREAKPOINTS if b < effective_max]
             valid_options_limit.append(f"All ({effective_max})")
-            valid_options_limit.append("Custom")
 
             if "25" in valid_options_limit:
                 default_idx = valid_options_limit.index("25")
             else:
-                default_idx = max(0, len(valid_options_limit) - 2)
+                default_idx = len(valid_options_limit) - 1  # the "All (…)" option
 
             selected_limit = st.selectbox(
                 "Max taxa to display",
@@ -109,24 +116,10 @@ def render_results(conn: sqlite3.Connection, root: RootChoice) -> QueryState:
                 help=f"Capped at {HARD_NODE_CAP} taxa to stay within memory limits.",
             )
 
-            if selected_limit == "Custom":
-                top_n = st.number_input(
-                    "Enter custom max taxa",
-                    min_value=2,
-                    max_value=effective_max,
-                    value=min(25, effective_max),
-                    step=1,
-                )
-            elif selected_limit.startswith("All"):
+            if selected_limit.startswith("All"):
                 top_n = effective_max
             else:
                 top_n = int(selected_limit)
-
-            include_counts = st.toggle(
-                "Show numeric details on the tree",
-                value=True,
-                help="Show per-resource counts next to each leaf in the tree (does not affect the table).",
-            )
 
         submitted = st.form_submit_button(
             "Generate Tree & Table", type="primary", icon=":material/analytics:",
@@ -185,32 +178,33 @@ def render_results(conn: sqlite3.Connection, root: RootChoice) -> QueryState:
 
 
 def _render_rank_and_size(conn: sqlite3.Connection, root: RootChoice) -> QueryState:
-    """Render the breakdown-rank selector + live size readback, and resolve
-    how many taxa sit at that rank (precomputed count, else live fetch).
-    Reactive (outside the form) so the readback and the form's limit options
-    update the moment the rank changes."""
+    """Render the breakdown-rank picker (the section's primary control) as a
+    prominent segmented control + a dynamic explainer of what to expect, and
+    resolve how many taxa sit at that rank. Reactive (outside the form) so the
+    explainer and the form's limit options update the moment the rank changes."""
     try:
         valid_options = list(taxonomy.resolve_valid_ranks(root.root_taxid))
     except taxonomy.UnknownTaxonError:
         valid_options = []
 
-    if "rank_selection" not in st.session_state:
-        st.session_state.rank_selection = valid_options[0] if valid_options else "phylum"
-
-    cols = st.columns([1, 2], gap="large", vertical_alignment="bottom")
     target_rank: str | None = None
-    with cols[0]:
-        if valid_options:
-            # Auto-fall back to the highest available rank when the previous
-            # selection is no longer valid for this root.
-            if st.session_state.rank_selection not in valid_options:
-                st.session_state.rank_selection = valid_options[0]
-            target_rank = st.selectbox(
-                "Break down by rank",
-                valid_options,
-                key="rank_selection",
-                help="The taxonomic rank to break the clade into. Only ranks below the root taxon are available.",
-            )
+    if valid_options:
+        # Keep a valid selection in session_state *before* the widget renders,
+        # so switching root (which changes the available ranks) never leaves a
+        # stale value that segmented_control would reject.
+        if st.session_state.get("rank_selection") not in valid_options:
+            st.session_state["rank_selection"] = valid_options[0]
+
+        st.markdown("##### :material/account_tree: Break down by rank")
+        selected = st.segmented_control(
+            "Break down by rank",
+            valid_options,
+            key="rank_selection",
+            label_visibility="collapsed",
+            help="Split the clade at this taxonomic rank — each resulting group becomes one row in the tree/table.",
+        )
+        # segmented_control can return None if the user deselects; keep a rank.
+        target_rank = selected if selected is not None else valid_options[0]
 
     num_nodes = 0
     is_precomputed = False
@@ -226,17 +220,18 @@ def _render_rank_and_size(conn: sqlite3.Connection, root: RootChoice) -> QuerySt
                     query_taxids = [t[0] for t in query_taxa]
                     num_nodes = len(query_taxids)
         except ValueError:
-            with cols[1]:
-                st.error("Invalid TaxID: Not found in database.")
+            st.error("Invalid TaxID: Not found in database.")
 
-    with cols[1]:
-        if target_rank and num_nodes > 0:
-            # Subtle inline readback (not a full-width colored callout), bottom-
-            # aligned with the selectbox.
-            note = f":material/category: :gray[**{num_nodes:,}** {target_rank}-level taxa]"
-            if num_nodes > 100:
-                note += " · larger selections take longer to render"
-            st.markdown(note)
+    if target_rank and num_nodes > 0:
+        plural = _RANK_PLURAL.get(target_rank, f"{target_rank}s")
+        note = (
+            f"Splitting **{root.root_name}** into its **{num_nodes:,} {plural}** — "
+            f"each row is one {target_rank}; the bars show what share of its "
+            "species have each genomic resource."
+        )
+        if num_nodes > 100:
+            note += " :gray[· larger selections take longer to render.]"
+        st.caption(note)
 
     return QueryState(
         root_taxid=root.root_taxid,
