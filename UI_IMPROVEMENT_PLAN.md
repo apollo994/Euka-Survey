@@ -104,11 +104,30 @@ First session landed the low-risk visual upgrade (verified via
 - [x] **A4.** Hero polish — `🧬` brand mark in the title, tagline demoted to
   `st.caption` for cleaner hierarchy.
 
+### ✅ Done — In-app data table + Tree/Table tabs (2026-06-16)
+
+Second session. The "Explore Results" section (renamed from "Tree
+Visualization") now renders both views in tabs from the *same*
+filtered/sorted/limited `phylum_metadata`. Verified via AppTest: form submit
+→ no exceptions, 2 tabs, 1 dataframe, 3 download buttons (SVG / table TSV /
+full TSV), 0 errors/warnings.
+
+- [x] **E1.** Interactive `st.dataframe` table — Taxon, TaxID, Species, four
+  `ProgressColumn` coverage bars (on-brand), four formatted total columns
+  (`localized`). Client-side column sorting/search for free; no rerun needed.
+  Total-column labels use `{card_title} (total)` to avoid the "Total Runs"
+  collision between the two RNA metrics.
+- [x] **E3.** "Download table (TSV)" of exactly the displayed rows (respects
+  current filters/sort/limit), distinct from the full Export Data TSV.
+- [x] **A1 (partial).** Results split into `st.tabs(["🌳 Tree", "📊 Table"])`.
+  Tree render no longer `st.stop()`s on failure, so the Table tab still shows.
+  *Remaining:* fold Overview (summary) and Export into the tab set if we want
+  a fully tabbed page (revisit after A2 control-placement decision).
+
 ### Theme A — Information architecture & layout
-- [ ] **A1. Tabs for results.** Wrap Summary / Tree / Table / Export in
-  `st.tabs(["Overview", "Tree", "Table", "Export"])` to cut scroll and separate
-  "read the numbers" from "make the figure". (Med effort; depends on E1 for the
-  Table tab.)
+- [~] **A1. Tabs for results.** Tree + Table tabs landed (see Done section).
+  Could still fold Summary / Export into a fuller `st.tabs(["Overview", "Tree",
+  "Table", "Export"])` to cut scroll further. (Revisit after A2.)
 - [ ] **A2. Controls in the sidebar (D1).** Move Query Configuration (root +
   rank) into the sidebar so it's a persistent control panel; keep help below it.
   Frees the main area for results. (Med; UX decision required.)
@@ -173,17 +192,12 @@ First session landed the low-risk visual upgrade (verified via
   render PNG/PDF directly). (Med.)
 
 ### Theme E — In-app data table & charts (new views)
-- [ ] **E1. Interactive results table.** `st.dataframe` of the filtered/sorted
-  per-clade rows with `column_config`: `ProgressColumn` for each coverage %,
-  `NumberColumn` (thousands fmt) for totals, `LinkColumn` for NCBI/ENA/Annotrieve.
-  This is the biggest "explorability" win — users can sort/search without the TSV.
-  Feed it the same `phylum_metadata` the tree uses. (Med.) **High value.**
+- [x] **E1. Interactive results table.** DONE (2026-06-16) — see Done section.
+  `LinkColumn` for per-row external links not yet added (follow-up).
 - [ ] **E2. Coverage bar chart.** An Altair/`st.bar_chart` of top-N clades'
   coverage % per resource — an interactive complement to the static tree, good
-  for screenshots/talks. (Med.)
-- [ ] **E3. Table download.** CSV/TSV download wired off the *displayed* table
-  (respects current filters/sort), distinct from the existing full-export TSV.
-  (Low; depends on E1.)
+  for screenshots/talks. (Med.) **Next candidate.**
+- [x] **E3. Table download.** DONE (2026-06-16) — "Download table (TSV)".
 - [ ] **E4. Per-row drill-down.** Selecting a table row could set it as the new
   root (re-query one level deeper) — turns the table into a navigator. (Med–High.)
 
@@ -255,3 +269,8 @@ A pragmatic order that front-loads visible wins and unblocks later work:
   border, link buttons), A4 (hero). User chose "light, brand-colored". Verified
   with AppTest (clean boot). Files: `.streamlit/config.toml`, `ui/summary.py`,
   `app.py`.
+- 2026-06-16 — In-app table + tabs: E1 (st.dataframe with coverage
+  ProgressColumns), E3 (displayed-rows TSV download), A1 partial (Tree/Table
+  tabs; section renamed "Explore Results"). Verified with AppTest (submit →
+  2 tabs, dataframe, 3 download buttons, 0 errors). Files: `ui/tree.py`,
+  `ui/sidebar.py`.

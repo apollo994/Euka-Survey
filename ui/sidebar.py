@@ -16,10 +16,10 @@ def render_sidebar() -> None:
             The dashboard shows total counts for Assemblies, Annotations, and RNA-Seq across your query.
 
             **3. Filter & Sort**
-            In the *Tree Visualization* section, use **Filter Nodes** to skip taxa missing specific resources. You can combine filters with **AND/OR** logic.
+            In the *Explore Results* section, use **Filter Nodes** to skip taxa missing specific resources. You can combine filters with **AND/OR** logic.
 
-            **4. Generate & Export**
-            Click **Generate Visualization** to view the tree. Use the **Data Export** buttons to download your query as a TSV or the tree as an SVG.
+            **4. Generate, Explore & Export**
+            Click **Generate Visualization** for the **🌳 Tree** and a sortable **📊 Table** of the same clades. Download the tree as SVG, the table as TSV, or the full query from **Export Data**.
             """)
 
         st.subheader("Project", anchor=False)
