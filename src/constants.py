@@ -40,8 +40,12 @@ FULL_RANKS: list[str] = [
     "genus", "subgenus", "species",
 ]
 
-HARD_NODE_CAP: int = 500
-STANDARD_BREAKPOINTS: list[int] = [10, 25, 50, 75, 100, 150, 200, 250, 300, 400, 500]
+# Hard ceiling on how many taxa a single tree/table render may include.
+# The ETE3 render runs in a spawned subprocess that draws one matplotlib
+# bar chart per leaf; very large trees can OOM the ~1 GB Streamlit Cloud
+# container. 200 is a safe, still-useful ceiling (was 500, which crashed).
+HARD_NODE_CAP: int = 200
+STANDARD_BREAKPOINTS: list[int] = [10, 25, 50, 75, 100, 150, 200]
 
 SQLITE_MAX_VARIABLES: int = 999
 

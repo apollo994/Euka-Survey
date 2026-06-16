@@ -25,12 +25,12 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
     st.header("Explore Results", anchor=False)
 
     with st.form("tree_settings_form", border=True):
-        st.subheader("Filter Nodes", anchor=False)
+        st.subheader("Filter taxa", anchor=False)
 
         # Filter options derived from METRICS: label -> coverage_key.
         filter_options = {m.filter_label: m.coverage_key for m in METRICS}
         selected_filters = st.multiselect(
-            "Require data for (leaves node out if it lacks data)",
+            "Require data for (excludes taxa that lack it)",
             list(filter_options.keys()),
             placeholder="Select features...",
         )
@@ -46,7 +46,7 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
             else database.FilterLogic.OR
         )
 
-        st.subheader("Sorting & Limits", anchor=False)
+        st.subheader("Sort & limit", anchor=False)
         # Sort options derived from METRICS: count variants then total variants.
         sort_options = {
             "Unique Species": "n_rows",
@@ -57,15 +57,17 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
 
         with cols[0]:
             sort_by_label = st.selectbox(
-                "Sort top nodes by number of ", list(sort_options.keys()), key="sort_by_selection",
+                "Rank taxa by number of", list(sort_options.keys()), key="sort_by_selection",
             )
             sort_by_key = sort_options[sort_by_label]
 
-            exclude_empty = st.toggle("Exclude Empty Taxa (Zero data across all fields)", value=True)
+            exclude_empty = st.toggle(
+                "Exclude empty taxa (no data in any resource)", value=True
+            )
 
         with cols[1]:
-            # Dynamic node-limit options bounded by both the actual node
-            # count and the hard performance cap.
+            # Dynamic taxa-limit options bounded by both the actual taxa
+            # count and the hard performance/memory cap.
             effective_max = min(query.num_nodes, HARD_NODE_CAP)
             valid_options_limit = [str(b) for b in STANDARD_BREAKPOINTS if b < effective_max]
             valid_options_limit.append(f"All ({effective_max})")
@@ -77,16 +79,16 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
                 default_idx = max(0, len(valid_options_limit) - 2)
 
             selected_limit = st.selectbox(
-                "Max nodes to display",
+                "Max taxa to display",
                 valid_options_limit,
                 index=default_idx,
                 key="limit_selection",
-                help=f"Hard cap set to {HARD_NODE_CAP} nodes for performance.",
+                help=f"Capped at {HARD_NODE_CAP} taxa to stay within memory limits.",
             )
 
             if selected_limit == "Custom":
                 top_n = st.number_input(
-                    "Enter custom max nodes",
+                    "Enter custom max taxa",
                     min_value=2,
                     max_value=effective_max,
                     value=min(25, effective_max),
@@ -98,26 +100,26 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
                 top_n = int(selected_limit)
 
             include_counts = st.toggle(
-                "Show Numeric Details in Tree",
+                "Show numeric details on the tree",
                 value=True,
-                help="Toggle display of per-feature resource counts in the tree visualization.",
+                help="Show per-resource counts next to each leaf in the tree (does not affect the table).",
             )
 
         submitted = st.form_submit_button(
-            "Generate Visualization", type="primary", icon=":material/account_tree:",
+            "Generate Tree & Table", type="primary", icon=":material/analytics:",
         )
 
     if not submitted:
         return
 
     if not query.target_rank:
-        st.error("Cannot generate tree: Root taxon is at species level or lower, no further taxonomic breakdown is possible.")
+        st.error("Cannot build results: the root taxon is at species level or lower, so there's no finer rank to break it down by.")
         st.stop()
     if query.num_nodes == 0:
-        st.error(f"Cannot generate tree. No {query.target_rank}s found or invalid TaxID {query.root_taxid}.")
+        st.error(f"Cannot build results: no {query.target_rank}-level taxa found under TaxID {query.root_taxid}.")
         st.stop()
 
-    with st.spinner("Aggregating data and filtering clades..."):
+    with st.spinner("Aggregating and filtering taxa..."):
         filter_keys = [filter_options[f] for f in selected_filters] if selected_filters else []
 
         if query.is_precomputed:
@@ -146,15 +148,15 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
                 exclude_empty=exclude_empty,
             )
 
-        nodes_excluded = query.num_nodes - total_matches
-        if nodes_excluded > 0:
+        taxa_excluded = query.num_nodes - total_matches
+        if taxa_excluded > 0:
             st.info(
-                f"**Nodes included:** {total_matches}/{query.num_nodes} "
-                f"({nodes_excluded} excluded due to filtering criteria)"
+                f"**Showing {total_matches} of {query.num_nodes} taxa** "
+                f"({taxa_excluded} hidden by your filters)"
             )
 
         if not phylum_metadata:
-            st.warning("No clades have data matching the criteria (or all were empty).")
+            st.warning("No taxa have data matching the criteria (or all were empty).")
             st.stop()
 
     tab_tree, tab_table = st.tabs(["🌳 Tree", "📊 Table"])
@@ -249,6 +251,7 @@ def _render_table_tab(phylum_metadata: dict[int, CladeMetadata], query: QuerySta
         file_name=f"table_{query.root_taxid}_{query.target_rank}.tsv",
         mime="text/tab-separated-values",
         icon=":material/download:",
+        type="primary",
         help="Exactly the rows shown above (current filters, sort, and limit).",
     )
 

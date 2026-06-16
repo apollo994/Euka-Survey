@@ -233,6 +233,24 @@ full TSV), 0 errors/warnings.
 - [ ] **G6. Accessibility & meta.** Alt text on the tree image, color-contrast
   check on the palette, `st.set_page_config` description, social/OG preview. (Low–Med.)
 
+### Theme H — CTA, terminology & safety (user feedback 2026-06-16)
+
+Now that the Table is a first-class view (not a "secondary feature"), the
+results section's framing needs to catch up, and the limits need to be safer.
+
+- [x] **H1. Co-equal Tree/Table framing.** DONE (2026-06-16) — CTA renamed
+  "Generate Tree & Table" with a neutral `:material/analytics:` icon; the table
+  TSV download is now `type="primary"` to match the SVG download.
+- [x] **H2. Lower the node cap to avoid OOM.** DONE (2026-06-16) —
+  `HARD_NODE_CAP 500 → 200`, breakpoints trimmed to `…200`, help reworded to
+  "Capped at 200 taxa to stay within memory limits."
+- [x] **H3. Terminology pass.** DONE (2026-06-16) — "nodes" → "taxa"
+  everywhere user-facing: size readback ("N {rank}-level taxa in this
+  selection"), form ("Filter taxa", "Sort & limit", "Rank taxa by number of",
+  "Max taxa to display"), and the included message ("Showing X of Y taxa, Z
+  hidden by your filters"). Tree-only control kept tree-scoped but clarified
+  ("Show numeric details on the tree … does not affect the table").
+
 ---
 
 ## 5. Suggested sequencing
@@ -285,3 +303,8 @@ A pragmatic order that front-loads visible wins and unblocks later work:
   `taxonomy.get_lineage_breadcrumb`), D2 (completion toast). Verified with
   AppTest (Mammalia breadcrumb renders; clean run). Files: `src/taxonomy.py`,
   `ui/summary.py`, `ui/tree.py`.
+- 2026-06-16 — User-feedback batch H: H1 (CTA "Generate Tree & Table" +
+  co-equal primary table download), H2 (HARD_NODE_CAP 500→200 to avoid OOM),
+  H3 (terminology "nodes"→"taxa", de-tree-centric labels). Verified with
+  AppTest (submit clean; new wording confirmed). Files: `src/constants.py`,
+  `ui/tree.py`, `ui/query_config.py`.

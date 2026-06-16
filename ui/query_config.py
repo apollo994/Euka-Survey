@@ -105,11 +105,14 @@ def render_query_config(conn: sqlite3.Connection) -> QueryState:
                             num_nodes = len(query_taxids)
 
                     if num_nodes > 0:
-                        st.info(f"Tree size: **{num_nodes}** {target_rank} nodes", icon="🌲")
+                        st.info(
+                            f"**{num_nodes}** {target_rank}-level taxa in this selection",
+                            icon=":material/category:",
+                        )
                         if num_nodes > 100:
-                            st.caption("High node counts may take longer to compute and render.")
+                            st.caption("Large selections may take longer to compute and render.")
                     else:
-                        st.warning(f"No {target_rank}s found under TaxID {root_taxid}.")
+                        st.warning(f"No {target_rank}-level taxa found under TaxID {root_taxid}.")
                 except ValueError:
                     st.error("Invalid TaxID: Not found in database.")
 
