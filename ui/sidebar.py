@@ -5,6 +5,7 @@ import streamlit as st
 
 def render_sidebar() -> None:
     with st.sidebar:
+        st.divider()
         st.header("Help & Resources")
 
         with st.expander("How to use EukaSurvey", expanded=False):

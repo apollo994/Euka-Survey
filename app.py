@@ -35,8 +35,9 @@ def main() -> None:
 
     conn = get_db_connection()
 
-    render_sidebar()
+    # Sidebar = persistent control panel: query controls first, help below.
     query = render_query_config(conn)
+    render_sidebar()
 
     if query.is_valid_root:
         render_summary(conn, query)

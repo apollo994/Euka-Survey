@@ -66,11 +66,9 @@ Annotations (orange card / dark-blue bar), RNA-Seq Any (green), Long-Read RNA
 
 ## 3. Open decisions (need user input before some items start)
 
-- **D1 — Control placement.** Keep Query Configuration at the top of the main
-  area, or move it into the **sidebar** as a persistent control panel? Sidebar
-  frees vertical space and is the conventional "data-app" layout, but the current
-  3-column top block is discoverable and the sidebar currently holds help. → see
-  Theme A.
+- **D1 — Control placement.** ✅ RESOLVED (2026-06-16) — moved root/rank to the
+  sidebar (A2). Open sub-question: also move the filter/sort/limit form there?
+  Currently kept contextual in the results section.
 - **D2 — Theme direction.** Light-only polish vs. light+dark with a toggle; how
   bold a primary color. → see Theme B.
 - **D3 — Static vs. interactive tree.** Keep the ETE3 SVG as the canonical
@@ -128,9 +126,12 @@ full TSV), 0 errors/warnings.
 - [~] **A1. Tabs for results.** Tree + Table tabs landed (see Done section).
   Could still fold Summary / Export into a fuller `st.tabs(["Overview", "Tree",
   "Table", "Export"])` to cut scroll further. (Revisit after A2.)
-- [ ] **A2. Controls in the sidebar (D1).** Move Query Configuration (root +
-  rank) into the sidebar so it's a persistent control panel; keep help below it.
-  Frees the main area for results. (Med; UX decision required.)
+- [x] **A2. Controls in the sidebar (D1).** DONE (2026-06-16) — root taxon +
+  breakdown rank + the size readback now render as a vertical "Query" panel at
+  the top of the sidebar, with Help & Resources below a divider. The main area
+  leads with the breadcrumb + summary + results. The filter/sort/limit form
+  stayed in the "Explore Results" section (contextual to the views); moving it
+  to the sidebar too is a possible follow-up.
 - [x] **A3. Lineage breadcrumb.** DONE (2026-06-16) —
   `taxonomy.get_lineage_breadcrumb` (lru_cached, canonical ranks
   domain..species) rendered as a labeled `st.markdown` line at the top of
@@ -308,3 +309,7 @@ A pragmatic order that front-loads visible wins and unblocks later work:
   H3 (terminology "nodes"→"taxa", de-tree-centric labels). Verified with
   AppTest (submit clean; new wording confirmed). Files: `src/constants.py`,
   `ui/tree.py`, `ui/query_config.py`.
+- 2026-06-16 — A2: moved root/rank query controls into a sidebar "Query" panel
+  (vertical), help below a divider; main area leads with results. D1 resolved.
+  Verified with AppTest (controls in sidebar, summary + submit flow intact).
+  Files: `ui/query_config.py`, `ui/sidebar.py`, `app.py`.
