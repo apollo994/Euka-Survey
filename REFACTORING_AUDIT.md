@@ -279,10 +279,10 @@ ui/
 app.py         # thin orchestrator
 ```
 
-**B. `@dataclass` metadata** replaces dict-of-dicts.
-**C. Schema versioning** via `PRAGMA user_version`; app refuses stale DB.
-**D. Pipeline as state machine** — fetch steps produce snapshot files; build step is pure.
-**E. Long-lived Qt render worker** — retire spawn-per-render dance.
+**B. `@dataclass` metadata** replaces dict-of-dicts.  
+**C. Schema versioning** via `PRAGMA user_version`; app refuses stale DB.  
+**D. Pipeline as state machine** — fetch steps produce snapshot files; build step is pure.  
+**E. Long-lived Qt render worker** — retire spawn-per-render dance.  
 **F.** ✅ *(2026-06-15)* Config-driven metric definition — single `METRICS: tuple[Metric, ...]` in `src/metrics.py` replaces all hardcoded `ass/ann/rna/lng` references across `database.py`, `visualization.py`, `app.py`, and `utils.py` (Batch 11).
 
 ---
