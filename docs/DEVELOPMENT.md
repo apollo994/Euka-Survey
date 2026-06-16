@@ -48,16 +48,72 @@ matplotlib in the same PR.
 ### What's in `packages.txt`
 
 Streamlit Cloud reads this for apt packages. We declare the minimal
-Qt5 system libraries the PyQt5 wheel links against:
+Qt5 system libraries the PyQt5 wheel links against at import time:
 
 - `libdbus-1-3` — Qt5 dbus integration
 - `libfontconfig1` — font lookup for SVG rendering
 - `libxkbcommon-x11-0` — Qt5 keyboard library (linked even when we use
   the offscreen plugin)
+- `libgl1` — provides `libGL.so.1`, needed by `from PyQt5 import QtGui`
+- `libglib2.0-0t64` — provides `libgthread-2.0.so.0` (+ the rest of
+  glib), also needed by `from PyQt5 import QtGui`
 
 No `xvfb` — tree rendering uses Qt5's built-in `offscreen` platform
 plugin (`QT_QPA_PLATFORM=offscreen`) instead of a virtual X server.
 See [ARCHITECTURE.md § Why tree rendering happens in a subprocess](ARCHITECTURE.md#why-tree-rendering-happens-in-a-subprocess).
+
+#### ⚠️ The Streamlit Cloud / Debian trixie `t64` trap (read before editing `packages.txt`)
+
+Streamlit Community Cloud's build image is **Debian trixie**, which
+completed the [64-bit `time_t` transition](https://wiki.debian.org/ReleaseGoals/64bit-time).
+Many runtime libraries were **renamed with a `t64` suffix**, and the
+*old* unsuffixed name no longer exists as an installable package.
+
+The one that bites us is glib:
+
+| You want | On trixie it's called | The old name does |
+| -------- | --------------------- | ----------------- |
+| `libgthread-2.0.so.0`, `libglib-2.0.so.0`, … | `libglib2.0-0t64` | **fails** — `libglib2.0-0` is unsatisfiable, so `apt-get` aborts the *entire* `packages.txt` install |
+
+**Why this is so easy to get stuck on:** when the bare `libglib2.0-0`
+name fails, apt aborts everything in `packages.txt`, so you end up
+*removing* the line to get the build to go green — and then the app
+crashes at runtime with a missing `.so` instead. That's the loop:
+add-bare-name → apt fails → drop the line → runtime crash → repeat. The
+escape is the `t64` name, which both installs cleanly **and** ships the
+`.so`.
+
+**The symptom in the deploy log** (the app, not apt, is what crashes):
+
+```
+File ".../ete3/treeview/qt.py", line 27, in <module>
+    from PyQt5 import QtGui, QtCore
+ImportError: libgthread-2.0.so.0: cannot open shared object file: No such file or directory
+```
+
+…followed immediately by a **misleading cascade** on the next rerun:
+
+```
+ImportError: cannot import name 'get_db_connection' from 'src.cache'
+```
+
+That second error is **not a real bug** — `src/cache.py` imports
+`src/visualization.py`, which dies on the `.so` load above and leaves
+`src.cache` half-initialized in `sys.modules` for the concurrent
+rerun. Fix the missing lib and both errors disappear. Don't go chasing
+`src.cache`.
+
+**How to fix / debug the next missing lib** (the libs above are the
+known-complete set, but if a future ete3/PyQt5 bump links a new one):
+
+1. Read the deploy log for `<libfoo>.so.N: cannot open shared object file`.
+2. Find the trixie package that ships it — search
+   <https://packages.debian.org/trixie/> by *Contents* for the exact
+   `.so` filename. **Use the name the search returns verbatim**
+   (it will include `t64` where applicable). Do not assume the
+   Ubuntu/older-Debian name.
+3. Add that exact package name to `packages.txt`, push to the deployed
+   branch, and re-watch the log.
 
 ---
 

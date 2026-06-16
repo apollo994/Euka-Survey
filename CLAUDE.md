@@ -195,3 +195,11 @@ Under `tests/`, run with `uv run pytest`. Key fixtures and files:
 - ENA fetching (`get_reads.py`) must stay on `format=json` + `r.json()`. The "stream TSV with
   `iter_lines`" optimization looked safe but silently truncated results to ~72 % of the true
   count; the cause is undiagnosed (likely a server-side TSV cap) and the optimization is parked.
+- `packages.txt` apt names must use Debian **trixie** `t64` suffixes — Streamlit Cloud builds on
+  trixie, where the 64-bit `time_t` transition renamed libs (e.g. glib is `libglib2.0-0t64`, NOT
+  `libglib2.0-0`; the bare name is unsatisfiable and makes `apt-get` abort the *whole* file). A
+  missing Qt/glib lib shows up as `ImportError: lib*.so.N: cannot open shared object file` from
+  `from PyQt5 import QtGui` (via `src/visualization.py`), plus a *misleading* cascade
+  `cannot import name 'get_db_connection' from 'src.cache'` — the latter is not a real bug, just
+  `src.cache` left half-imported. Full debugging recipe + the t64 trap is in
+  `docs/DEVELOPMENT.md` § "What's in `packages.txt`".
