@@ -43,6 +43,7 @@ def render_summary(conn: sqlite3.Connection, query: QueryState) -> None:
         label=f":material/groups: Total Species under {query.root_name}",
         value=f"{stats.n_rows:,}",
         help="Total number of unique species tracked in this clade",
+        border=True,
     )
 
     # Four resource cards — one per Metric, same order.
@@ -61,15 +62,25 @@ def _render_metric_card(metric: Metric, stats: CladeMetadata, root_taxid: int) -
         else:
             st.markdown(title_markdown)
 
+        covered = getattr(stats, metric.coverage_key)
+        pct = stats.percent(metric.key)
         st.metric(
             label="Species Covered",
-            value=f"{getattr(stats, metric.coverage_key):,}",
+            value=f"{covered:,}",
             help=metric.species_help,
         )
+        # Coverage as a visual: the headline "how well-sampled is this
+        # clade?" signal, not just a raw count.
+        st.progress(min(pct / 100.0, 1.0), text=f"{pct:.0f}% of species")
+
         st.metric(
             label=metric.total_label,
             value=f"{getattr(stats, metric.total_key):,}",
             help=metric.total_help,
         )
-        url = metric.external_url(root_taxid)
-        st.markdown(f"[View on {metric.external_source_name}]({url}) :material/open_in_new:")
+        st.link_button(
+            f"View on {metric.external_source_name}",
+            metric.external_url(root_taxid),
+            icon=":material/open_in_new:",
+            width="stretch",
+        )

@@ -23,9 +23,9 @@ st.set_page_config(
 
 
 def main() -> None:
-    st.title("EukaSurvey", anchor=False)
+    st.title("🧬 EukaSurvey", anchor=False)
     st.subheader("The Genomic Resource Explorer for Eukaryotes", divider="blue", anchor=False)
-    st.markdown("Visualize genomic data availability across the Eukaryotic Tree of Life.")
+    st.caption("Visualize genomic data availability across the Eukaryotic Tree of Life.")
 
     try:
         get_db_ready()
