@@ -9,41 +9,40 @@ import sqlite3
 
 import streamlit as st
 
-from src import taxonomy
 from src.cache import get_phylum_metadata_cached
 from src.metrics import CladeMetadata, METRICS, Metric
-from ui.state import QueryState
+from ui.state import RootChoice
 
 
-def render_summary(conn: sqlite3.Connection, query: QueryState) -> None:
+def render_summary(conn: sqlite3.Connection, root: RootChoice) -> None:
     """Render the summary section. Caller has already verified
-    `query.is_valid_root` (skip the section otherwise).
+    `root.is_valid_root` (skip the section otherwise). Depends only on
+    the root taxon — the breakdown rank doesn't affect these clade-wide
+    rollups.
 
     Edge case: if the root taxid resolves to a *name* (`root_name !=
     "Unknown"`) but has no row in `precomputed_clade_features`, we
     fall through to a warning so the user sees something rather than
     a silent missing section.
     """
-    assert query.root_taxid is not None  # gated by is_valid_root
-
-    _render_breadcrumb(query.root_taxid)
+    assert root.root_taxid is not None  # gated by is_valid_root
 
     st.header("Genomic Resource Summary", anchor=False)
     st.markdown(
         f"Overview of available resources across the entire "
-        f"_{query.root_name}_ {query.root_rank} (TaxID {query.root_taxid})."
+        f"_{root.root_name}_ {root.root_rank} (TaxID {root.root_taxid})."
     )
 
-    root_metadata = get_phylum_metadata_cached(conn, (query.root_taxid,), exclude_empty=False)
-    if not root_metadata or query.root_taxid not in root_metadata:
+    root_metadata = get_phylum_metadata_cached(conn, (root.root_taxid,), exclude_empty=False)
+    if not root_metadata or root.root_taxid not in root_metadata:
         st.warning("No data found for this Root Taxon.")
         return
 
-    stats = root_metadata[query.root_taxid]
+    stats = root_metadata[root.root_taxid]
 
     # Prominent top-level metric.
     st.metric(
-        label=f":material/groups: Total Species under {query.root_name}",
+        label=f":material/groups: Total Species under {root.root_name}",
         value=f"{stats.n_rows:,}",
         help="Total number of unique species tracked in this clade",
         border=True,
@@ -53,20 +52,7 @@ def render_summary(conn: sqlite3.Connection, query: QueryState) -> None:
     cols = st.columns(len(METRICS))
     for col, metric in zip(cols, METRICS):
         with col:
-            _render_metric_card(metric, stats, query.root_taxid)
-
-
-def _render_breadcrumb(root_taxid: int) -> None:
-    """Show the root's lineage path (canonical ranks only) so the user is
-    oriented within the tree of life. Skips only when the lineage can't be
-    resolved at all — it's decorative, not load-bearing."""
-    crumb = taxonomy.get_lineage_breadcrumb(root_taxid)
-    if not crumb:
-        return
-    names = [name for _, name, _ in crumb]
-    # Bold the current node; join ancestors with the breadcrumb separator.
-    path = " › ".join(names[:-1] + [f"**{names[-1]}**"])
-    st.markdown(f":material/account_tree: :gray[Lineage —] {path}")
+            _render_metric_card(metric, stats, root.root_taxid)
 
 
 def _render_metric_card(metric: Metric, stats: CladeMetadata, root_taxid: int) -> None:

@@ -1,4 +1,6 @@
-"""Results section: filter/sort/limit form, then a Tree + Table view."""
+"""Explore Results section: breakdown rank, filter/sort/limit form, then a
+Tree + Table view. Owns the breakdown rank (it's a parameter of the
+results, not a global selector — the summary doesn't need it)."""
 
 import csv
 import io
@@ -8,21 +10,42 @@ import tempfile
 
 import streamlit as st
 
-from src import database, ete_utils
+from src import database, ete_utils, taxonomy
 from src.cache import (
+    fetch_taxa_cached,
     generate_tree_svg_cached,
     get_filtered_taxa_metadata_cached,
     get_phylum_metadata_cached,
+    get_taxa_count_cached,
 )
 from src.constants import HARD_NODE_CAP, STANDARD_BREAKPOINTS
 from src.metrics import CladeMetadata, METRICS
-from ui.state import QueryState
+from ui.state import QueryState, RootChoice
 
 
-def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
-    """Render the form, then the Tree + Table views on submit. Caller has
-    already verified `query.has_results`."""
+def render_results(conn: sqlite3.Connection, root: RootChoice) -> QueryState:
+    """Render the Explore Results section: breakdown rank + form, then the
+    Tree + Table views on submit. Caller has verified `root.is_valid_root`.
+    Returns the resolved `QueryState` so the caller can gate the export."""
     st.header("Explore Results", anchor=False)
+    st.caption(
+        f"Break **{root.root_name}** down by a taxonomic rank, then filter and "
+        "sort it. View the result as an interactive tree or a sortable table."
+    )
+
+    # Step 2 — breakdown rank (reactive) + size readback. This is what the
+    # rest of the section operates on.
+    query = _render_rank_and_size(conn, root)
+
+    if query.target_rank is None:
+        st.warning(
+            "This root taxon is at species level or lower — there's no finer "
+            "rank to break it down by. Pick a higher-level clade to explore."
+        )
+        return query
+    if query.num_nodes == 0:
+        st.warning(f"No {query.target_rank}-level taxa found under TaxID {root.root_taxid}.")
+        return query
 
     with st.form("tree_settings_form", border=True):
         st.subheader("Filter taxa", anchor=False)
@@ -110,14 +133,7 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
         )
 
     if not submitted:
-        return
-
-    if not query.target_rank:
-        st.error("Cannot build results: the root taxon is at species level or lower, so there's no finer rank to break it down by.")
-        st.stop()
-    if query.num_nodes == 0:
-        st.error(f"Cannot build results: no {query.target_rank}-level taxa found under TaxID {query.root_taxid}.")
-        st.stop()
+        return query
 
     with st.spinner("Aggregating and filtering taxa..."):
         filter_keys = [filter_options[f] for f in selected_filters] if selected_filters else []
@@ -164,6 +180,73 @@ def render_tree_section(conn: sqlite3.Connection, query: QueryState) -> None:
         _render_tree_tab(phylum_metadata, include_counts, query)
     with tab_table:
         _render_table_tab(phylum_metadata, query)
+
+    return query
+
+
+def _render_rank_and_size(conn: sqlite3.Connection, root: RootChoice) -> QueryState:
+    """Render the breakdown-rank selector + live size readback, and resolve
+    how many taxa sit at that rank (precomputed count, else live fetch).
+    Reactive (outside the form) so the readback and the form's limit options
+    update the moment the rank changes."""
+    try:
+        valid_options = list(taxonomy.resolve_valid_ranks(root.root_taxid))
+    except taxonomy.UnknownTaxonError:
+        valid_options = []
+
+    if "rank_selection" not in st.session_state:
+        st.session_state.rank_selection = valid_options[0] if valid_options else "phylum"
+
+    cols = st.columns([1, 2], gap="large", vertical_alignment="bottom")
+    target_rank: str | None = None
+    with cols[0]:
+        if valid_options:
+            # Auto-fall back to the highest available rank when the previous
+            # selection is no longer valid for this root.
+            if st.session_state.rank_selection not in valid_options:
+                st.session_state.rank_selection = valid_options[0]
+            target_rank = st.selectbox(
+                "Break down by rank",
+                valid_options,
+                key="rank_selection",
+                help="The taxonomic rank to break the clade into. Only ranks below the root taxon are available.",
+            )
+
+    num_nodes = 0
+    is_precomputed = False
+    query_taxids: list[int] = []
+    if target_rank:
+        try:
+            num_nodes = get_taxa_count_cached(conn, root.root_taxid, target_rank)
+            if num_nodes > 0:
+                is_precomputed = True
+            else:
+                query_taxa = fetch_taxa_cached(conn, root.root_taxid, target_rank)
+                if query_taxa:
+                    query_taxids = [t[0] for t in query_taxa]
+                    num_nodes = len(query_taxids)
+        except ValueError:
+            with cols[1]:
+                st.error("Invalid TaxID: Not found in database.")
+
+    with cols[1]:
+        if target_rank and num_nodes > 0:
+            # Subtle inline readback (not a full-width colored callout), bottom-
+            # aligned with the selectbox.
+            note = f":material/category: :gray[**{num_nodes:,}** {target_rank}-level taxa]"
+            if num_nodes > 100:
+                note += " · larger selections take longer to render"
+            st.markdown(note)
+
+    return QueryState(
+        root_taxid=root.root_taxid,
+        target_rank=target_rank,
+        root_name=root.root_name,
+        root_rank=root.root_rank,
+        num_nodes=num_nodes,
+        is_precomputed=is_precomputed,
+        query_taxids=query_taxids,
+    )
 
 
 def _render_tree_tab(phylum_metadata, include_counts, query: QueryState) -> None:

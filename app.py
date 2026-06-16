@@ -9,10 +9,10 @@ import streamlit as st
 
 from src.cache import get_db_connection, get_db_ready
 from ui.export import render_export
-from ui.query_config import render_query_config
+from ui.query_config import render_root_control
 from ui.sidebar import render_sidebar
 from ui.summary import render_summary
-from ui.tree import render_tree_section
+from ui.tree import render_results
 
 st.set_page_config(
     page_title="EukaSurvey Platform",
@@ -35,22 +35,24 @@ def main() -> None:
 
     conn = get_db_connection()
 
-    # Sidebar = persistent control panel: query controls first, help below.
-    query = render_query_config(conn)
+    # Sidebar = persistent control panel: root taxon (the one global control)
+    # first, help below. The breakdown rank now lives with the results.
+    root = render_root_control(conn)
     render_sidebar()
 
-    if query.is_valid_root:
-        render_summary(conn, query)
-    elif query.root_taxid is not None:
-        # User typed a taxid that doesn't resolve in NCBI's taxonomy.
-        st.error(f"TaxID {query.root_taxid} does not exist in the NCBI taxonomy database.")
+    if not root.is_valid_root:
+        if root.root_taxid is not None:
+            # User typed a taxid that doesn't resolve in NCBI's taxonomy.
+            st.error(f"TaxID {root.root_taxid} does not exist in the NCBI taxonomy database.")
+        return
+
+    render_summary(conn, root)
 
     st.space("xsmall")
-    if query.has_results:
-        render_tree_section(conn, query)
+    query = render_results(conn, root)
 
-    st.space("xsmall")
     if query.has_results and query.target_rank:
+        st.space("xsmall")
         render_export(conn, query)
 
 

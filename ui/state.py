@@ -1,18 +1,37 @@
 """Shared state passed between UI sections.
 
-`render_query_config` is the producer; the rest of the UI consumes a
-`QueryState`. The dataclass replaces the implicit, easy-to-drift
-state-coupling block that used to live in the middle of `app.py::main`,
-where `query_taxids` was populated in one `if` arm and read from a
-different one ~250 lines later.
+Two stages, mirroring the page's information architecture:
+
+- `RootChoice` — produced by the **sidebar** (`render_root_control`). The
+  single global question: "which clade?". Drives the summary cards, which
+  roll up the whole clade and don't care about rank.
+- `QueryState` — produced by the **Explore Results** section
+  (`render_results`), which owns the breakdown rank. Carries the root
+  fields too so the tree/table/export consumers keep one object.
 """
 
 from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True, slots=True)
+class RootChoice:
+    """The sidebar's root-taxon selection — everything that's knowable
+    before a breakdown rank is chosen. Field names match `QueryState` so
+    `render_summary` can take either."""
+
+    root_taxid: int | None
+    root_name: str
+    root_rank: str
+
+    @property
+    def is_valid_root(self) -> bool:
+        """Root taxon is real and resolvable."""
+        return self.root_taxid is not None and self.root_name != "Unknown"
+
+
+@dataclass(frozen=True, slots=True)
 class QueryState:
-    """Result of `render_query_config`.
+    """Result of `render_results` (root + chosen rank + size).
 
     - `root_taxid` / `target_rank` / `root_name` / `root_rank`: the
       user's chosen root and rank, plus the resolved display strings.

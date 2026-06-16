@@ -66,9 +66,10 @@ Annotations (orange card / dark-blue bar), RNA-Seq Any (green), Long-Read RNA
 
 ## 3. Open decisions (need user input before some items start)
 
-- **D1 — Control placement.** ✅ RESOLVED (2026-06-16) — moved root/rank to the
-  sidebar (A2). Open sub-question: also move the filter/sort/limit form there?
-  Currently kept contextual in the results section.
+- **D1 — Control placement.** ✅ RESOLVED (2026-06-16) — settled on a two-tier
+  split: **sidebar = root taxon only** (the global "which clade?"), **main =
+  rank + filters + sort + limit** (results parameters, in Explore Results).
+  See A2 + H5.
 - **D2 — Theme direction.** Light-only polish vs. light+dark with a toggle; how
   bold a primary color. → see Theme B.
 - **D3 — Static vs. interactive tree.** Keep the ETE3 SVG as the canonical
@@ -126,19 +127,17 @@ full TSV), 0 errors/warnings.
 - [~] **A1. Tabs for results.** Tree + Table tabs landed (see Done section).
   Could still fold Summary / Export into a fuller `st.tabs(["Overview", "Tree",
   "Table", "Export"])` to cut scroll further. (Revisit after A2.)
-- [x] **A2. Controls in the sidebar (D1).** DONE (2026-06-16) — root taxon +
-  breakdown rank + the size readback now render as a vertical "Query" panel at
-  the top of the sidebar, with Help & Resources below a divider. The main area
-  leads with the breadcrumb + summary + results. The filter/sort/limit form
-  stayed in the "Explore Results" section (contextual to the views); moving it
-  to the sidebar too is a possible follow-up.
+- [x] **A2. Controls in the sidebar (D1).** DONE (2026-06-16), then refined by
+  H5: the sidebar holds **only the root taxon** (the one global control, made
+  prominent). The breakdown rank + size readback moved into Explore Results
+  (it's a results parameter), and the filter/sort/limit form stays there too.
+  Net: sidebar = "which clade?", main = everything that flows from it.
 - [x] **A3. Lineage breadcrumb.** DONE (2026-06-16) —
   `taxonomy.get_lineage_breadcrumb` (lru_cached, canonical ranks
-  domain..species) rendered as a labeled `st.markdown` line at the top of
-  the summary, e.g. *:material/account_tree: Lineage — Eukaryota › Metazoa ›
-  Chordata › **Mammalia***. Always shown when a lineage resolves (including
-  the single-node Eukaryota default — first attempt used a `st.caption` that
-  skipped single-node roots, so it was invisible on the default view; fixed).
+  domain..species), e.g. *Eukaryota › Metazoa › Chordata › **Mammalia***.
+  Relocated (see H7) from the top of the summary into the **sidebar, directly
+  under the root picker** — it describes the selected root, so it lives where
+  you pick it. Rendered as a compact `st.caption`.
 - [ ] **A4. Tighten the hero.** Logo/`🧬` lockup, smaller tagline, consistent
   `st.space` rhythm; consider `st.container(border=...)` framing per section so
   the page reads as cards. (Low.)
@@ -251,6 +250,34 @@ results section's framing needs to catch up, and the limits need to be safer.
   "Max taxa to display"), and the included message ("Showing X of Y taxa, Z
   hidden by your filters"). Tree-only control kept tree-scoped but clarified
   ("Show numeric details on the tree … does not affect the table").
+- [x] **H4. Make the root control prominent (sidebar).** DONE (2026-06-16) —
+  sidebar leads with a `##` "→ Start here" heading + a plain-language
+  instruction (reworded — see H7), with the root taxon as the single global
+  control. Font bump: "Root taxon" is an `###` heading-label (native label
+  collapsed) and a scoped, best-effort CSS rule lifts the sidebar selectbox +
+  text-input font to 1.05rem (targets the stable `stSidebar` testid; no-ops if
+  Streamlit internals change).
+- [x] **H5. Move "Break down by rank" into Explore Results.** DONE
+  (2026-06-16) — the summary cards depend only on the root, so the rank is a
+  *results parameter*, not a global selector. New `RootChoice` state (sidebar,
+  root-only) + `render_results(conn, root) -> QueryState` which owns the rank
+  selector + size readback (reactive, outside the form) and returns the full
+  `QueryState` for export gating. `render_summary` now takes `RootChoice`.
+- [x] **H6. Interface guidance.** DONE (2026-06-16) — Explore Results opens
+  with a caption explaining the rank → filter → tree/table flow; the sidebar
+  instruction tells the user the page reflects the clade they pick. (More
+  guidance possible: per-section tooltips, a first-run banner — see G2.)
+- [x] **H7. Refinement pass (post-review).** DONE (2026-06-16) — (a) breadcrumb
+  moved into the sidebar under the root picker (see A3); (b) reworded the Step-1
+  line from the techy "Everything on the page updates from this" to "Choose a
+  clade to explore. You'll see the genomic data available across every species
+  it contains."; (c) sidebar font bump (see H4).
+- [x] **H8. Explore Results layout polish.** DONE (2026-06-16) — killed the
+  dead space above the rank selector (it came from `vertical_alignment="center"`
+  centering the selectbox against a chunky `st.info` box → now `"bottom"`), and
+  replaced the big blue `st.info` size callout with a subtle gray inline
+  readback (":material/category: **N** {rank}-level taxa · larger selections
+  take longer to render").
 
 ---
 
@@ -313,3 +340,15 @@ A pragmatic order that front-loads visible wins and unblocks later work:
   (vertical), help below a divider; main area leads with results. D1 resolved.
   Verified with AppTest (controls in sidebar, summary + submit flow intact).
   Files: `ui/query_config.py`, `ui/sidebar.py`, `app.py`.
+- 2026-06-16 — Feedback batch H4–H6 (IA rework): sidebar now holds ONLY the
+  root taxon, made prominent ("Start here / Step 1"); breakdown rank + size
+  readback moved into Explore Results; added flow-guidance captions. New
+  `RootChoice` state; `render_root_control` (sidebar) + `render_results(conn,
+  root)->QueryState` (owns rank); `render_summary` takes `RootChoice`. Verified
+  with AppTest incl. species-level + invalid-taxid edge cases. Files:
+  `ui/state.py`, `ui/query_config.py`, `ui/summary.py`, `ui/tree.py`, `app.py`.
+- 2026-06-16 — Refinement pass H7–H8 (post-review): breadcrumb → sidebar under
+  the root picker; reworded Step-1; sidebar font bump (heading-labels + scoped
+  CSS); Explore Results dead space removed + subtle inline size readback
+  (replacing the loud `st.info`). Verified with AppTest (sidebar breadcrumb for
+  Eukaryota + Mammalia; no main breadcrumb; subtle readback; clean run).
