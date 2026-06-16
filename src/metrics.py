@@ -4,7 +4,7 @@ The app and pipeline both reason about four genomic resources:
 
 | key   | card_title       | what it means                                  |
 |-------|------------------|------------------------------------------------|
-| ass   | Assemblies       | whole-genome assemblies                        |
+| ass   | Assemblies       | genome assemblies                              |
 | ann   | Annotations      | functional annotations of assemblies           |
 | rna   | RNA-Seq (Any)    | RNA-Seq runs, any sequencing platform          |
 | lng   | Long-Read RNA-Seq| RNA-Seq runs on Oxford Nanopore or PacBio SMRT |
@@ -148,7 +148,7 @@ METRICS: tuple[Metric, ...] = (
         external_url_template=(
             "https://www.ebi.ac.uk/ena/browser/advanced-search?"
             "result=read_run&query=tax_tree({taxid})%20AND%20"
-            "library_strategy%3D%22rna-seq%22&"
+            "(library_strategy%3D%22rna-seq%22%20OR%20library_source%3D%22TRANSCRIPTOMIC%22)&"
             "fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy&limit=0"
         ),
         tsv_count_column="species_with_rna_seq",
@@ -174,9 +174,8 @@ METRICS: tuple[Metric, ...] = (
         external_url_template=(
             "https://www.ebi.ac.uk/ena/browser/advanced-search?"
             "result=read_run&query=tax_tree({taxid})%20AND%20"
-            "library_strategy%3D%22rna-seq%22%20AND%20"
-            "(instrument_platform%3D%22OXFORD_NANOPORE%22%20OR%20"
-            "instrument_platform%3D%22PACBIO_SMRT%22)&"
+            "(library_strategy%3D%22rna-seq%22%20OR%20library_source%3D%22transcriptomic%22)%20AND%20"
+            "(%20instrument_platform%3D%22oxford_nanopore%22%20OR%20instrument_platform%3D%22pacbio_smrt%22%20)&"
             "fields=run_accession%2Cexperiment_title%2Ctax_id%2Clibrary_strategy%2Cinstrument_platform&limit=0"
         ),
         tsv_count_column="species_with_long_read_rna_seq",
