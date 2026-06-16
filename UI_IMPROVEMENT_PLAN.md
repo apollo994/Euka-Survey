@@ -174,6 +174,16 @@ full TSV), 0 errors/warnings.
 - [ ] **C5. Totals readability.** Thousands separators are already there; add the
   resource icon + a one-line "what this counts" caption under each card. (Low.)
   (Partly addressed: the progress bar now carries a "% of species" label.)
+- [x] **C6. Root "About" card (Wikipedia).** DONE (2026-06-16) — kills the
+  dead space beside the full-width Total Species metric. `src/wikipedia.py`
+  `get_taxon_summary(name)` (cached 24h, follows redirects so NCBI scientific
+  names resolve, fails silent → `None`). Top row is now `[metric | About card]`
+  at `[1, 2]`. Both share a fixed height (`_TOP_ROW_HEIGHT=240`) so the row
+  doesn't jump between roots; the thumbnail is a fixed `object-fit:cover` box
+  (`_THUMB_PX=110`) so aspect ratio never resizes the card; the metric is
+  vertically centered with a "in **{name}** · {rank}" caption. Falls back to a
+  full-width metric when there's no usable summary. requests is already a base
+  dep; negligible memory.
 
 ### Theme D — Tree visualization UX
 - [ ] **D1. `st.status` for rendering.** Replace the two sequential spinners with
@@ -352,3 +362,7 @@ A pragmatic order that front-loads visible wins and unblocks later work:
   CSS); Explore Results dead space removed + subtle inline size readback
   (replacing the loud `st.info`). Verified with AppTest (sidebar breadcrumb for
   Eukaryota + Mammalia; no main breadcrumb; subtle readback; clean run).
+- 2026-06-16 — C6: Wikipedia "About" card beside the Total Species metric
+  (`src/wikipedia.py` + `ui/summary.py`), fixed-height row + object-fit
+  thumbnail so the layout is stable across roots. Verified with AppTest (live
+  fetch renders title/extract/img/link; clean run).
