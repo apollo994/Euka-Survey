@@ -195,6 +195,7 @@ def _render_tree_tab(phylum_metadata, include_counts, query: QueryState) -> None
         type="primary",
     )
     st.session_state.rendered_taxid = query.root_taxid
+    st.toast("Tree & table ready", icon="✅")
 
 
 def _render_table_tab(phylum_metadata: dict[int, CladeMetadata], query: QueryState) -> None:

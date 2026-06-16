@@ -42,6 +42,41 @@ def get_taxa_at_rank(root_taxid: int, rank: str) -> list[tuple[int, str]]:
     return sorted(names.items(), key=lambda x: x[1])
 
 
+# Ranks worth showing in the orientation breadcrumb — the canonical
+# Linnaean levels. Filtering to these keeps the path short (NCBI lineages
+# are padded with many unranked "clade" nodes).
+_BREADCRUMB_RANKS: frozenset[str] = frozenset(
+    {"domain", "superkingdom", "kingdom", "phylum", "class", "order", "family", "genus", "species"}
+)
+
+
+@lru_cache(maxsize=512)
+def get_lineage_breadcrumb(taxid: int) -> tuple[tuple[int, str, str], ...]:
+    """Return the root→taxon lineage as `(taxid, name, rank)` triples,
+    filtered to the canonical ranks (plus the taxon itself).
+
+    Used for the orientation breadcrumb under the page header. Returns an
+    empty tuple if the taxid isn't in the local taxonomy. Cached so each
+    root resolves at most once per process.
+    """
+    ncbi = get_ncbi()
+    try:
+        lineage = ncbi.get_lineage(taxid)
+    except ValueError:
+        return ()
+    if not lineage:
+        return ()
+
+    names = ncbi.get_taxid_translator(lineage)
+    ranks = ncbi.get_rank(lineage)
+    out: list[tuple[int, str, str]] = []
+    for t in lineage:
+        rank = ranks.get(t, "no rank")
+        if rank in _BREADCRUMB_RANKS or t == taxid:
+            out.append((t, names.get(t, str(t)), rank))
+    return tuple(out)
+
+
 @lru_cache(maxsize=512)
 def resolve_valid_ranks(root_taxid: int) -> tuple[str, ...]:
     """Return the ranks (subset of ALLOWED_RANKS) strictly below `root_taxid`'s own rank.

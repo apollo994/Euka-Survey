@@ -131,9 +131,13 @@ full TSV), 0 errors/warnings.
 - [ ] **A2. Controls in the sidebar (D1).** Move Query Configuration (root +
   rank) into the sidebar so it's a persistent control panel; keep help below it.
   Frees the main area for results. (Med; UX decision required.)
-- [ ] **A3. Lineage breadcrumb.** Under the header, show the selected root's
-  lineage path (e.g. *Eukaryota › Metazoa › Chordata › Mammalia*) using
-  `ete_utils`/`get_lineage_translator`. Orients the user. (Low–Med.)
+- [x] **A3. Lineage breadcrumb.** DONE (2026-06-16) —
+  `taxonomy.get_lineage_breadcrumb` (lru_cached, canonical ranks
+  domain..species) rendered as a labeled `st.markdown` line at the top of
+  the summary, e.g. *:material/account_tree: Lineage — Eukaryota › Metazoa ›
+  Chordata › **Mammalia***. Always shown when a lineage resolves (including
+  the single-node Eukaryota default — first attempt used a `st.caption` that
+  skipped single-node roots, so it was invisible on the default view; fixed).
 - [ ] **A4. Tighten the hero.** Logo/`🧬` lockup, smaller tagline, consistent
   `st.space` rhythm; consider `st.container(border=...)` framing per section so
   the page reads as cards. (Low.)
@@ -174,9 +178,12 @@ full TSV), 0 errors/warnings.
 ### Theme D — Tree visualization UX
 - [ ] **D1. `st.status` for rendering.** Replace the two sequential spinners with
   one `st.status("Building tree…")` that updates through aggregate → filter →
-  render and collapses on success, showing elapsed time. (Low.)
-- [ ] **D2. `st.toast` on completion.** Fire "Tree ready ✓" so users who scrolled
-  away get feedback. (Low.)
+  render and collapses on success, showing elapsed time. (Low.) *Note: the
+  aggregate spinner and the render spinner now sit on opposite sides of the
+  tab boundary — a single status box across that boundary is awkward; revisit
+  if/when render moves out of the tab.*
+- [x] **D2. `st.toast` on completion.** DONE (2026-06-16) — "Tree & table
+  ready ✅" fires once per Generate.
 - [ ] **D3. Scrollable tree container + height control.** Tall trees overflow;
   wrap the `st.image` in a fixed-height scroll container and/or expose a
   "compact / comfortable" density toggle. (Med.)
@@ -274,3 +281,7 @@ A pragmatic order that front-loads visible wins and unblocks later work:
   tabs; section renamed "Explore Results"). Verified with AppTest (submit →
   2 tabs, dataframe, 3 download buttons, 0 errors). Files: `ui/tree.py`,
   `ui/sidebar.py`.
+- 2026-06-16 — Orientation + feedback: A3 (lineage breadcrumb via
+  `taxonomy.get_lineage_breadcrumb`), D2 (completion toast). Verified with
+  AppTest (Mammalia breadcrumb renders; clean run). Files: `src/taxonomy.py`,
+  `ui/summary.py`, `ui/tree.py`.

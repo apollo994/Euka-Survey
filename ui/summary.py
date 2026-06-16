@@ -9,6 +9,7 @@ import sqlite3
 
 import streamlit as st
 
+from src import taxonomy
 from src.cache import get_phylum_metadata_cached
 from src.metrics import CladeMetadata, METRICS, Metric
 from ui.state import QueryState
@@ -24,6 +25,8 @@ def render_summary(conn: sqlite3.Connection, query: QueryState) -> None:
     a silent missing section.
     """
     assert query.root_taxid is not None  # gated by is_valid_root
+
+    _render_breadcrumb(query.root_taxid)
 
     st.header("Genomic Resource Summary", anchor=False)
     st.markdown(
@@ -51,6 +54,19 @@ def render_summary(conn: sqlite3.Connection, query: QueryState) -> None:
     for col, metric in zip(cols, METRICS):
         with col:
             _render_metric_card(metric, stats, query.root_taxid)
+
+
+def _render_breadcrumb(root_taxid: int) -> None:
+    """Show the root's lineage path (canonical ranks only) so the user is
+    oriented within the tree of life. Skips only when the lineage can't be
+    resolved at all — it's decorative, not load-bearing."""
+    crumb = taxonomy.get_lineage_breadcrumb(root_taxid)
+    if not crumb:
+        return
+    names = [name for _, name, _ in crumb]
+    # Bold the current node; join ancestors with the breadcrumb separator.
+    path = " › ".join(names[:-1] + [f"**{names[-1]}**"])
+    st.markdown(f":material/account_tree: :gray[Lineage —] {path}")
 
 
 def _render_metric_card(metric: Metric, stats: CladeMetadata, root_taxid: int) -> None:
