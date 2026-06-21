@@ -1,2 +1,45 @@
+# EukaSurvey theme — light, brand-colored.
+# Palette is anchored on the data colors used in src/metrics.py:
+#   assemblies #a6cee3/#1f78b4 (blues) · RNA-Seq #b2df8a/#33a02c (greens)
+# so the chrome, the summary cards, and the tree bars all read as one family.
+# NOTE: unknown [theme] keys are silently ignored by Streamlit — every key
+# below was verified against the installed build (1.58.0).
+
 [theme]
-base="light"
+base = "light"
+
+# Accent: a confident science blue (the "annotations" dark blue). Drives
+# buttons, toggles, selected states, focus rings, the primary download CTA.
+primaryColor = "#1f78b4"
+
+# Surfaces: white page, faint cool-blue tint for containers/cards so the
+# bordered sections lift off the background instead of floating on white.
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f1f6fb"
+
+# Cool near-black text + matching link color for a crisp, clinical feel.
+textColor = "#1b2733"
+linkColor = "#1f78b4"
+
+# Soft rounded corners + subtle borders on inputs/containers — makes the
+# card-based layout look intentional rather than default-Streamlit.
+baseRadius = "0.5rem"
+borderColor = "#d8e2ec"
+showWidgetBorder = true
+showSidebarBorder = true
+
+# Dataframe chrome (used once the in-app table lands — Theme E1).
+dataframeHeaderBackgroundColor = "#e8f1f9"
+dataframeBorderColor = "#d8e2ec"
+
+# Categorical chart colors = the four METRICS, in order
+# (assemblies, annotations, RNA-Seq, long-read) so any st-native chart
+# matches the tree bars and cards (Theme B3).
+chartCategoricalColors = ["#a6cee3", "#1f78b4", "#b2df8a", "#33a02c"]
+
+# Sidebar: a slightly deeper tint than the card surface so the control/help
+# panel reads as a distinct region.
+[theme.sidebar]
+backgroundColor = "#e8f1f9"
+secondaryBackgroundColor = "#ffffff"
+borderColor = "#cfddeb"

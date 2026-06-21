@@ -1,0 +1,56 @@
+[project]
+name = "euka-survey"
+version = "0.1.0"
+description = "Streamlit web app for exploring genomic sequencing data across the eukaryotic tree of life."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11,<3.13"
+
+# Minimum deps for the Streamlit web app (app.py + src/) — also what
+# Streamlit Community Cloud installs from uv.lock.
+dependencies = [
+    "streamlit",
+    # Phylogenetic tree manipulation and rendering. Pinned because
+    # ete3 has no upstream maintenance and any version drift risks
+    # breaking the rendering path.
+    "ete3==3.1.3",
+    # ete3 needs PyQt5 to render trees. The PyPI wheel bundles Qt5
+    # libraries, so no conda is needed.
+    "pyqt5==5.15.11",
+    # Per-leaf divergent bar charts.
+    "matplotlib",
+    # ABI-compatibility pin: ete3 + matplotlib were built against
+    # NumPy 1.x. Bumping requires retesting tree rendering end-to-end.
+    "numpy<2.0.0",
+    # eukaryotes.db download in src/utils.py.
+    "requests",
+]
+
+[project.optional-dependencies]
+# Deps needed only by the offline db_builder pipeline. NOT installed by
+# Streamlit Cloud — opt-in via `uv sync --extra pipeline` locally or in
+# CI. Note: this group does NOT include the `ncbi-datasets-cli` binary
+# (used by db_builder/build_db/get_assemblies.py); see docs/PIPELINE.md
+# for how to install it standalone.
+pipeline = [
+    # Retry decorator for the flaky Annotrieve + ENA endpoints.
+    "tenacity",
+]
+
+[dependency-groups]
+# Local-dev tooling. Opt-in via `uv sync --group dev` (or it's installed
+# automatically when uv detects you're working inside the project repo,
+# depending on uv version).
+dev = [
+    "pytest",
+]
+
+[build-system]
+# Required to keep `uv` happy even though we don't actually build a wheel.
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# Tells hatchling which packages to bundle if a wheel is ever built;
+# also avoids "no packages found" errors during `uv sync`.
+packages = ["src", "db_builder", "ui"]
