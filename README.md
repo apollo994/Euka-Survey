@@ -10,7 +10,7 @@ runs (ENA), split into short-read and long-read.
 The data is precomputed monthly into a SQLite database
 (`eukaryotes.db`, ~300 MB) that the app downloads on first launch.
 
-**Try it now:** <https://euka-survey-62bi4d34cytdpb56zmhms2.streamlit.app/>
+**Try it now:** <https://euka-survey.streamlit.app/>
 
 ---
 

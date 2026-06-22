@@ -287,7 +287,7 @@ After non-trivial changes to `app.py` or `src/`:
      message
 
 For UI behaviour the deployed app at
-<https://euka-survey-62bi4d34cytdpb56zmhms2.streamlit.app/> is the
+<https://euka-survey.streamlit.app/> is the
 reference.
 
 ---
